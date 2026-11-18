@@ -128,6 +128,9 @@ export class ImportController {
         importId: result.importId,
         count,
         ...(reprocessedExistingImport ? { enrichedPositionCount } : {}),
+        ...("positionChangeSummary" in result
+          ? { positionChangeSummary: result.positionChangeSummary }
+          : {}),
         documentType: preview.documentType,
         message: importMessage,
       },

@@ -582,6 +582,53 @@ describe("PortfolioImport", () => {
     window.removeEventListener("portfolio:updated", portfolioUpdated);
   });
 
+  it("explains position changes without treating missing snapshot rows as sales", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => positionPreview })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            positionChangeSummary: {
+              comparisonAvailable: true,
+              currentReferenceDate: "2026-11-18",
+              previousReferenceDate: "2026-11-14",
+              currentPositionCount: 3,
+              previousPositionCount: 3,
+              updatedCount: 1,
+              unchangedCount: 1,
+              unmatchedInCurrentCount: 1,
+              absentFromCurrentFileCount: 1,
+              notComparableCount: 0,
+            },
+          }),
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("posicoes.xlsx")] },
+    });
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "18/11/2026" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    const summary = await screen.findByRole("alert");
+    expect(summary.textContent).toContain("Posições atualizadas: 1");
+    expect(summary.textContent).toContain("Sem alteração: 1");
+    expect(summary.textContent).toContain(
+      "Sem correspondência no snapshot anterior: 1",
+    );
+    expect(summary.textContent).toContain("não confirma venda ou resgate");
+    expect(summary.textContent).toContain("nenhuma posição foi removida");
+  });
+
   it("summarizes plural movement and trade files after a successful batch", async () => {
     const fetch = vi
       .fn()

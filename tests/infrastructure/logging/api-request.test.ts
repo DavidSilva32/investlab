@@ -560,6 +560,29 @@ describe("withApiRequestLogging", () => {
     }
   });
 
+  it("allows finance capacity simulations in read-only support mode for the selected customer", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/finance-capacity",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/finance-capacity", {
+        method: "POST",
+        headers: {
+          cookie: "investlab-support-view=token",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ownerId: "customer-1" });
+  });
+
   it.each([
     ["POST", "/api/proventos"],
     ["POST", "/api/finance-overview"],

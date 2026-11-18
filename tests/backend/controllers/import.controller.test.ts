@@ -149,6 +149,39 @@ describe("ImportController", () => {
     expect(service.confirm).toHaveBeenCalled();
   });
 
+  it("returns the confirmed B3 position comparison when provided by persistence", async () => {
+    const positionChangeSummary = {
+      comparisonAvailable: true,
+      currentReferenceDate: "2026-11-18",
+      previousReferenceDate: "2026-11-14",
+      currentPositionCount: 2,
+      previousPositionCount: 2,
+      updatedCount: 1,
+      unchangedCount: 1,
+      unmatchedInCurrentCount: 0,
+      absentFromCurrentFileCount: 0,
+      notComparableCount: 0,
+    };
+    service.confirm.mockResolvedValue({
+      preview,
+      result: {
+        importId: "import-1",
+        snapshotId: "snapshot-1",
+        positionChangeSummary,
+      },
+      duplicate: false,
+    });
+
+    const response = await importController.confirm(
+      requestWithFile(),
+      "request-1",
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      positionChangeSummary,
+    });
+  });
+
   it("counts and confirms negotiation rows with a document-specific message", async () => {
     const tradePreview = {
       hash: "d".repeat(64),

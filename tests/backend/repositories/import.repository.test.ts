@@ -102,6 +102,7 @@ const chain = (result: unknown) => ({
 const queryChain = (result: unknown) => {
   const query: Record<string, unknown> = {};
   query.where = () => query;
+  query.innerJoin = () => query;
   query.orderBy = () => query;
   query.for = () => query;
   query.limit = async () => result;
@@ -112,10 +113,16 @@ const queryChain = (result: unknown) => {
 const emptyImportGuard = () => ({
   execute: vi.fn().mockResolvedValue(undefined),
   select: vi.fn().mockReturnValue({
-    from: () => ({
-      where: () => ({ orderBy: () => ({ limit: async () => [] }) }),
-      orderBy: () => ({ limit: async () => [] }),
-    }),
+    from: () => {
+      const query: Record<string, unknown> = {};
+      query.where = () => query;
+      query.innerJoin = () => query;
+      query.orderBy = () => query;
+      query.limit = async () => [];
+      query.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve([]).then(resolve);
+      return query;
+    },
   }),
 });
 const withManualRead = <
@@ -1745,7 +1752,15 @@ describe("import repository", () => {
         estimationBaseDate: "2026-09-18",
         positions,
       }),
-    ).resolves.toMatchObject({ snapshotId: "snapshot-1" });
+    ).resolves.toMatchObject({
+      snapshotId: "snapshot-1",
+      positionChangeSummary: {
+        comparisonAvailable: false,
+        currentReferenceDate: "2026-09-18",
+        previousReferenceDate: null,
+        currentPositionCount: 1,
+      },
+    });
     expect(persistedInputs).toEqual([
       expect.objectContaining({
         estimationBaseDate: "2026-09-18",

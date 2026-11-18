@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { logger } from "@/infrastructure/logging/logger";
@@ -23,6 +23,10 @@ import type { TreasurySelicLiquidityFact } from "@/backend/types/treasury-selic-
 import type { ParsedB3Import } from "@/backend/services/b3-xlsx-parser";
 import type { ParsedB3Trade } from "@/backend/services/b3-trading-xlsx-parser";
 import type { PersistedB3Movement } from "@/backend/services/b3-movement-fingerprint";
+import {
+  summarizeB3PositionSnapshotChange,
+  type B3PositionSnapshotComparison,
+} from "@/backend/services/b3-position-snapshot-summary";
 import type { MonthlyPortfolioSnapshot } from "@/backend/services/monthly-portfolio-review";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
 import { classifyInstrumentKind } from "@/lib/instrument-kind";
@@ -708,10 +712,86 @@ export class ImportRepository {
             ...existing,
           };
         }
+        let positionChangeSummary: B3PositionSnapshotComparison | undefined;
         if (input.documentType === "B3_MOVEMENT_XLSX")
           await transaction.execute(
             sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
           );
+        if (input.documentType === "B3_POSITION_XLSX") {
+          await transaction.execute(
+            sql`LOCK TABLE ${positionSnapshots}, ${positionItems} IN SHARE ROW EXCLUSIVE MODE`,
+          );
+          const [previousSnapshot] = await transaction
+            .select({
+              id: positionSnapshots.id,
+              referenceDate: positionSnapshots.referenceDate,
+            })
+            .from(positionSnapshots)
+            .innerJoin(imports, eq(imports.id, positionSnapshots.importId))
+            .where(
+              and(
+                eq(positionSnapshots.userId, userId),
+                eq(imports.userId, userId),
+                eq(imports.documentType, "B3_POSITION_XLSX"),
+                eq(imports.status, "CONFIRMED"),
+                lt(positionSnapshots.referenceDate, input.referenceDate),
+              ),
+            )
+            .orderBy(
+              desc(positionSnapshots.referenceDate),
+              desc(positionSnapshots.createdAt),
+              desc(positionSnapshots.id),
+            )
+            .limit(1);
+          let previousPositions: Array<{
+            product: string;
+            quantity: string;
+            totalValue: string | null;
+            unitPrice: string | null;
+            valuationSource: string | null;
+            assetCode: string | null;
+            institution: string | null;
+            issuer: string | null;
+            indexer: string | null;
+            regimeType: string | null;
+            issuedAt: string | null;
+            maturityAt: string | null;
+          }> = [];
+          if (previousSnapshot) {
+            previousPositions = await transaction
+              .select({
+                product: positionItems.product,
+                quantity: positionItems.quantity,
+                totalValue: positionItems.totalValue,
+                unitPrice: positionItems.unitPrice,
+                valuationSource: positionItems.valuationSource,
+                assetCode: positionItems.assetCode,
+                institution: positionItems.institution,
+                issuer: positionItems.issuer,
+                indexer: positionItems.indexer,
+                regimeType: positionItems.regimeType,
+                issuedAt: positionItems.issuedAt,
+                maturityAt: positionItems.maturityAt,
+              })
+              .from(positionItems)
+              .where(
+                and(
+                  eq(positionItems.snapshotId, previousSnapshot.id),
+                  eq(positionItems.userId, userId),
+                ),
+              );
+          }
+          positionChangeSummary = summarizeB3PositionSnapshotChange(
+            input.positions,
+            input.referenceDate,
+            previousSnapshot?.referenceDate
+              ? {
+                  positions: previousPositions,
+                  referenceDate: previousSnapshot.referenceDate,
+                }
+              : null,
+          );
+        }
         const [importRecord] = await transaction
           .insert(imports)
           .values({
@@ -823,7 +903,11 @@ export class ImportRepository {
           userId,
           requestId,
         );
-        return { importId: importRecord.id, snapshotId: snapshot.id };
+        return {
+          importId: importRecord.id,
+          snapshotId: snapshot.id,
+          ...(positionChangeSummary ? { positionChangeSummary } : {}),
+        };
       });
     } catch (error) {
       logger.error("database_import_persistence_failed", { requestId, error });

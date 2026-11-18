@@ -17,6 +17,7 @@ import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getApiMessage } from "@/lib/api-message";
 import type { InstrumentKind } from "@/lib/instrument-kind";
+import type { B3PositionSnapshotComparison } from "@/backend/services/b3-position-snapshot-summary";
 import {
   TradingReconciliationReview,
   type B3ReconciliationSummary,
@@ -177,14 +178,22 @@ type Item = {
   referenceDate?: string;
   reconciliationDecisions?: ReconciliationDecision[];
 };
-type MutationResponse = { message?: string };
+type MutationResponse = {
+  message?: string;
+  positionChangeSummary?: B3PositionSnapshotComparison;
+};
 type ConfirmationItem = Item & { preview: Preview };
 type ConfirmationOrderItem = {
   preview: { documentType: Preview["documentType"] };
   referenceDate?: string;
 };
 type ConfirmationResult =
-  | { status: "success"; item: ConfirmationItem; message: string }
+  | {
+      status: "success";
+      item: ConfirmationItem;
+      message: string;
+      positionChangeSummary?: B3PositionSnapshotComparison;
+    }
   | {
       status: "failure";
       item: ConfirmationItem & { error: string };
@@ -223,6 +232,10 @@ function formatMoney(value: string | null) {
   return value === null ? "—" : money.format(Number(value));
 }
 
+function formatReferenceDate(value: string) {
+  return date.format(new Date(`${value}T00:00:00Z`));
+}
+
 function groupReconciliationCandidates(
   candidates: ReconciliationCandidate[],
 ): ReconciliationGroup[] {
@@ -256,6 +269,9 @@ export function PortfolioImport({
   const [confirmationSummary, setConfirmationSummary] = useState<string | null>(
     null,
   );
+  const [positionChangeSummaries, setPositionChangeSummaries] = useState<
+    B3PositionSnapshotComparison[]
+  >([]);
   const [reconciliationSummary, setReconciliationSummary] =
     useState<B3ReconciliationSummary | null>(null);
   const [
@@ -290,6 +306,7 @@ export function PortfolioImport({
     if (files.length === 0) return;
     setImportCompleted(false);
     setConfirmationSummary(null);
+    setPositionChangeSummaries([]);
     setLoading(true);
     setItems(files.map((file) => ({ file })));
     const results = await Promise.all(
@@ -341,6 +358,7 @@ export function PortfolioImport({
         ),
     );
     setConfirmationSummary(null);
+    setPositionChangeSummaries([]);
     setLoading(true);
     const ordered = [...ready].sort(compareImportConfirmationOrder);
     const results: ConfirmationResult[] = [];
@@ -358,6 +376,9 @@ export function PortfolioImport({
           status: "success" as const,
           item,
           message: getApiMessage(response, "Arquivo importado com sucesso."),
+          ...(response.positionChangeSummary
+            ? { positionChangeSummary: response.positionChangeSummary }
+            : {}),
         });
       } catch (error) {
         const message =
@@ -397,6 +418,11 @@ export function PortfolioImport({
         ({ item }) => item.preview.documentType === "B3_PROVENTO_XLSX",
       ),
     };
+    setPositionChangeSummaries(
+      importedByType.positions.flatMap(({ positionChangeSummary }) =>
+        positionChangeSummary ? [positionChangeSummary] : [],
+      ),
+    );
     const countRows = (imports: typeof successes) =>
       imports.reduce((total, result) => {
         const preview = result.item.preview;
@@ -627,7 +653,48 @@ export function PortfolioImport({
                 ? "Atualização parcial"
                 : "Resultado da atualização"}
             </AlertTitle>
-            <AlertDescription>{confirmationSummary}</AlertDescription>
+            <AlertDescription>
+              <p>{confirmationSummary}</p>
+              {positionChangeSummaries.map((summary, index) => (
+                <div
+                  className="mt-2 space-y-1"
+                  key={`${summary.currentReferenceDate}-${index}`}
+                >
+                  <p className="font-medium">
+                    Posição B3 de{" "}
+                    {formatReferenceDate(summary.currentReferenceDate)}
+                  </p>
+                  {summary.comparisonAvailable ? (
+                    <>
+                      <p>
+                        Comparada com o fechamento de{" "}
+                        {formatReferenceDate(summary.previousReferenceDate!)}:
+                      </p>
+                      <ul className="list-disc space-y-0.5 pl-5">
+                        <li>Posições atualizadas: {summary.updatedCount}</li>
+                        <li>Sem alteração: {summary.unchangedCount}</li>
+                        <li>
+                          Sem correspondência no snapshot anterior:{" "}
+                          {summary.unmatchedInCurrentCount}
+                        </li>
+                        <li>Não comparáveis: {summary.notComparableCount}</li>
+                        <li>
+                          {summary.absentFromCurrentFileCount} posições do
+                          snapshot anterior não aparecem neste arquivo. Isso não
+                          confirma venda ou resgate; nenhuma posição foi
+                          removida.
+                        </li>
+                      </ul>
+                    </>
+                  ) : (
+                    <p>
+                      Primeiro snapshot disponível para comparação:{" "}
+                      {summary.currentPositionCount} posições no arquivo.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </AlertDescription>
           </Alert>
         )}
         {items.length === 0 && !loading && importCompleted ? (
