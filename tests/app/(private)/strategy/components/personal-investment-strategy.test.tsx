@@ -53,6 +53,40 @@ const baseData = {
       },
     ],
   },
+  strategyWealth: {
+    complete: true,
+    limitation: null,
+    knownValueCents: "100000",
+    excludedBalanceCents: "0",
+    excludedObjectives: [],
+    missingObjectiveNames: [],
+    classes: [
+      {
+        id: "fixed_income",
+        label: "Renda fixa",
+        knownValueCents: "40000",
+        currentPercentage: 40,
+      },
+      {
+        id: "brazilian_equities",
+        label: "Ações e BDRs",
+        knownValueCents: "30000",
+        currentPercentage: 30,
+      },
+      {
+        id: "international_etfs",
+        label: "ETFs internacionais",
+        knownValueCents: "20000",
+        currentPercentage: 20,
+      },
+      {
+        id: "fiis",
+        label: "Fundos imobiliários (FIIs)",
+        knownValueCents: "10000",
+        currentPercentage: 10,
+      },
+    ],
+  },
   savedAllocationPercentages: null,
   allocationActive: false,
 };
@@ -98,8 +132,57 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.getByText(/R\$\s*1\.000,00/)).toBeTruthy();
     expect(screen.getByText(/02\/10\/2026/)).toBeTruthy();
     expect(screen.getByText("Distribuição por classe")).toBeTruthy();
+    expect(
+      screen.getByText(/Reserva e objetivos pessoais continuam no patrimônio/),
+    ).toBeTruthy();
     expect(screen.queryByText("O que importa para você?")).toBeNull();
     expect(screen.getByText(/não identifica recomendações/)).toBeTruthy();
+  });
+
+  it("shows objective balances and their source dates outside strategy percentages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          strategyWealth: {
+            ...baseData.strategyWealth,
+            knownValueCents: "44000",
+            excludedBalanceCents: "56000",
+            excludedObjectives: [
+              {
+                id: "reserve-id",
+                name: "Reserva",
+                amountCents: "56000",
+                observedOn: "2026-11-14",
+              },
+            ],
+            classes: [
+              {
+                id: "fixed_income",
+                label: "Renda fixa",
+                knownValueCents: "0",
+                currentPercentage: 0,
+              },
+              ...baseData.strategyWealth.classes.slice(1),
+            ],
+          },
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(
+      await screen.findByText(
+        "A estratégia considera apenas investimentos de longo prazo",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Reserva: R\$\s*560,00 · informado em 14\/11\/2026/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Reserva e objetivos pessoais continuam no patrimônio/),
+    ).toBeTruthy();
   });
 
   it("retries after a blocking load error", async () => {

@@ -112,6 +112,100 @@ export type StrategyAllocationPosition = {
   positionCount?: number;
 };
 
+export type StrategyObjectiveBalance = {
+  id: string;
+  kind: string;
+  purpose: string | null;
+  name: string;
+  balanceTracking: { observedAmountCents: string; observedOn: string } | null;
+};
+
+export function calculateLongTermStrategyWealth(
+  allocation: ReturnType<typeof summarizeStrategyAllocation>,
+  objectives: StrategyObjectiveBalance[],
+) {
+  const excludedObjectives = objectives
+    .filter(
+      (objective) =>
+        objective.kind === "RESERVE" || objective.purpose === "PERSONAL_GOAL",
+    )
+    .map((objective) => ({
+      id: objective.id,
+      name: objective.name,
+      amountCents: objective.balanceTracking?.observedAmountCents ?? null,
+      observedOn: objective.balanceTracking?.observedOn ?? null,
+    }));
+  const missingObjectives = excludedObjectives.filter(
+    (objective) => objective.amountCents === null,
+  );
+  const excludedBalanceCents = excludedObjectives.reduce(
+    (sum, objective) =>
+      sum +
+      (objective.amountCents === null ? 0n : BigInt(objective.amountCents)),
+    0n,
+  );
+  const fixedIncome = allocation.classes.find(
+    ({ id }) => id === "fixed_income",
+  );
+  const fixedIncomeCents = BigInt(fixedIncome?.knownValueCents ?? "0");
+  const strategyTotalCents =
+    BigInt(allocation.knownValueCents) - excludedBalanceCents;
+  const limitation =
+    missingObjectives.length > 0
+      ? "missing_objective_balance"
+      : excludedBalanceCents > fixedIncomeCents
+        ? "objective_balances_exceed_fixed_income"
+        : null;
+
+  if (limitation) {
+    return {
+      complete: false,
+      limitation,
+      knownValueCents: null,
+      excludedBalanceCents: excludedBalanceCents.toString(),
+      excludedObjectives,
+      missingObjectiveNames: missingObjectives.map(({ name }) => name),
+      classes: [],
+    };
+  }
+
+  const adjustedClassValues = allocation.classes.map((assetClass) => ({
+    ...assetClass,
+    knownValueCents:
+      assetClass.id === "fixed_income"
+        ? (BigInt(assetClass.knownValueCents) - excludedBalanceCents).toString()
+        : assetClass.knownValueCents,
+  }));
+  const classifiedValueCents = adjustedClassValues.reduce(
+    (sum, assetClass) => sum + BigInt(assetClass.knownValueCents),
+    0n,
+  );
+  const representedBasisPoints =
+    strategyTotalCents <= 0n
+      ? 0n
+      : (classifiedValueCents * 10000n + strategyTotalCents / 2n) /
+        strategyTotalCents;
+  const classBasisPoints = allocateCentsByProportionalGap(
+    adjustedClassValues.map(({ knownValueCents }) => BigInt(knownValueCents)),
+    representedBasisPoints,
+    false,
+  );
+
+  return {
+    complete: true,
+    limitation: null,
+    knownValueCents: strategyTotalCents.toString(),
+    excludedBalanceCents: excludedBalanceCents.toString(),
+    excludedObjectives,
+    missingObjectiveNames: [],
+    classes: adjustedClassValues.map((assetClass, index) => ({
+      ...assetClass,
+      percentageBasisPoints: Number(classBasisPoints[index]),
+      currentPercentage: Number(classBasisPoints[index]) / 100,
+    })),
+  };
+}
+
 export function summarizeStrategyAllocation(
   positions: StrategyAllocationPosition[],
 ) {

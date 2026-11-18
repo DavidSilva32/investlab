@@ -75,6 +75,7 @@ const percentages = {
 };
 const baseProps = {
   classes,
+  strategySleeveComplete: true,
   knownValueCents: "100000",
   valuationDate: "2026-10-02",
   valuationDates: ["2026-10-02"],
@@ -179,6 +180,24 @@ afterEach(() => {
 });
 
 describe("StrategyAllocationWorkspace", () => {
+  it("suppresses allocation charts and simulations when objective balances are incomplete", () => {
+    render(
+      <StrategyAllocationWorkspace
+        {...baseProps}
+        classes={[]}
+        strategySleeveComplete={false}
+      />,
+    );
+
+    expect(screen.getByText("Distribuição indisponível")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Simular aporte" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.getAllByText(/Corrija a informação/)).toHaveLength(2);
+  });
+
   it("shows effective valuation context only when it differs from the query date", () => {
     const { rerender } = render(<StrategyAllocationWorkspace {...baseProps} />);
 

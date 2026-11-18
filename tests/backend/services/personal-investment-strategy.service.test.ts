@@ -51,6 +51,7 @@ const notConfiguredReserve = {
 function makeService(
   positions: ReturnType<typeof position>[] = [],
   reserveCalculation: EmergencyReserveCalculation | null = notConfiguredReserve,
+  objectives: Array<Record<string, unknown>> = [],
 ) {
   const positionService = {
     listCurrentEnriched: vi.fn().mockResolvedValue(evaluated),
@@ -69,12 +70,16 @@ function makeService(
   const reserveService = {
     getContributionContext: vi.fn().mockResolvedValue(reserveCalculation),
   };
+  const objectiveService = {
+    getOverview: vi.fn().mockResolvedValue({ objectives }),
+  };
   const service = new PersonalInvestmentStrategyService(
     positionService as never,
     allocationService as never,
     repository as never,
     reserveService as never,
     () => "2026-10-02",
+    objectiveService as never,
   );
   return {
     service,
@@ -82,6 +87,7 @@ function makeService(
     allocationService,
     repository,
     reserveService,
+    objectiveService,
   };
 }
 
@@ -218,6 +224,198 @@ describe("PersonalInvestmentStrategyService", () => {
     expect(result.portfolioWealth.positionCount).toBe(2);
     expect(result.valuationDates).toEqual(["2026-09-30"]);
     expect(result.valuationDatesComplete).toBe(false);
+  });
+
+  it("keeps B3 wealth unchanged and derives a separate long-term allocation", async () => {
+    const { service } = makeService(
+      [
+        position("CDB", "10000", null, { assetClass: "Renda fixa" }),
+        position("Ação Brasil", "10000", null, {
+          assetClass: "Renda variável",
+          geography: "Brasil",
+        }),
+      ],
+      notConfiguredReserve,
+      [
+        {
+          id: "reserve-id",
+          kind: "RESERVE",
+          purpose: null,
+          name: "Reserva",
+          balanceTracking: {
+            observedAmountCents: "4000",
+            observedOn: "2026-10-01",
+          },
+        },
+      ],
+    );
+
+    const result = await service.getOverview();
+
+    expect(result.totalWealth.knownValueCents).toBe("20000");
+    expect(result.portfolioWealth.knownValueCents).toBe("20000");
+    expect(result.portfolioWealth.classes[0]?.knownValueCents).toBe("10000");
+    expect(result.strategyWealth).toMatchObject({
+      complete: true,
+      knownValueCents: "16000",
+      excludedBalanceCents: "4000",
+      excludedObjectives: [
+        {
+          name: "Reserva",
+          amountCents: "4000",
+          observedOn: "2026-10-01",
+        },
+      ],
+    });
+    expect(result.strategyWealth.classes.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        id: "fixed_income",
+        knownValueCents: "6000",
+        currentPercentage: 37.5,
+      }),
+      expect.objectContaining({
+        id: "brazilian_equities",
+        knownValueCents: "10000",
+        currentPercentage: 62.5,
+      }),
+    ]);
+  });
+
+  it("does not simulate long-term contributions when a personal goal balance is missing", async () => {
+    const { service } = makeService(
+      [position("CDB", "10000", null, { assetClass: "Renda fixa" })],
+      notConfiguredReserve,
+      [
+        {
+          id: "travel-id",
+          kind: "CUSTOM",
+          purpose: "PERSONAL_GOAL",
+          name: "Viagem",
+          balanceTracking: null,
+        },
+      ],
+    );
+
+    const result = await service.simulateContribution({
+      contributionAmount: 20,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+
+    expect(result.strategyBalanceContext).toMatchObject({
+      complete: false,
+      limitation: "missing_objective_balance",
+      missingObjectiveNames: ["Viagem"],
+    });
+    expect(result.simulation).toBeNull();
+  });
+
+  it("simulates against the long-term sleeve after excluding observed goals", async () => {
+    const { service } = makeService(
+      [
+        position("CDB", "10000", null, { assetClass: "Renda fixa" }),
+        position("Ação Brasil", "10000", null, {
+          assetClass: "Renda variável",
+          geography: "Brasil",
+        }),
+      ],
+      notConfiguredReserve,
+      [
+        {
+          id: "reserve-id",
+          kind: "RESERVE",
+          purpose: null,
+          name: "Reserva",
+          balanceTracking: {
+            observedAmountCents: "4000",
+            observedOn: "2026-10-01",
+          },
+        },
+        {
+          id: "travel-id",
+          kind: "CUSTOM",
+          purpose: "PERSONAL_GOAL",
+          name: "Viagem",
+          balanceTracking: {
+            observedAmountCents: "2000",
+            observedOn: "2026-10-02",
+          },
+        },
+      ],
+    );
+
+    const result = await service.simulateContribution({
+      contributionAmount: 100,
+      allocationPercentages: {
+        fixed_income: 50,
+        brazilian_equities: 50,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+
+    expect(result.strategyBalanceContext).toMatchObject({
+      complete: true,
+      excludedBalanceCents: "6000",
+      excludedObjectives: [
+        { name: "Reserva", amountCents: "4000" },
+        { name: "Viagem", amountCents: "2000" },
+      ],
+    });
+    expect(result.simulation).toMatchObject({
+      totalCents: "14000",
+      projectedTotalCents: "24000",
+    });
+    expect(result.simulation?.allocations.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        id: "fixed_income",
+        currentValueCents: "4000",
+      }),
+      expect.objectContaining({
+        id: "brazilian_equities",
+        currentValueCents: "10000",
+      }),
+    ]);
+  });
+
+  it("blocks strategy simulation when observed goal balances exceed known fixed income", async () => {
+    const { service } = makeService(
+      [position("CDB", "10000", null, { assetClass: "Renda fixa" })],
+      notConfiguredReserve,
+      [
+        {
+          id: "reserve-id",
+          kind: "RESERVE",
+          purpose: null,
+          name: "Reserva",
+          balanceTracking: {
+            observedAmountCents: "11000",
+            observedOn: "2026-10-01",
+          },
+        },
+      ],
+    );
+
+    const result = await service.simulateContribution({
+      contributionAmount: 100,
+      allocationPercentages: {
+        fixed_income: 100,
+        brazilian_equities: 0,
+        international_etfs: 0,
+        fiis: 0,
+      },
+    });
+
+    expect(result.strategyBalanceContext).toMatchObject({
+      complete: false,
+      limitation: "objective_balances_exceed_fixed_income",
+      excludedBalanceCents: "11000",
+    });
+    expect(result.simulation).toBeNull();
   });
 
   it("keeps a contribution simulation available without inventing a position valuation date", async () => {

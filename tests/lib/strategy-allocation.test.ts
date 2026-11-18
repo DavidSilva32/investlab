@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateLongTermStrategyWealth,
   getStrategyAssetClassId,
   summarizeStrategyAllocation,
   getStrategyAssetClassColor,
@@ -113,6 +114,155 @@ describe("simulateStrategyContribution", () => {
 });
 
 describe("strategy asset class metadata", () => {
+  it("subtracts reserve and personal goal balances only from long-term fixed income", () => {
+    const portfolio = summarizeStrategyAllocation([
+      {
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        knownValueCents: "10000",
+      },
+      {
+        product: "Ação",
+        assetClass: "Renda variável",
+        geography: "Brasil",
+        knownValueCents: "20000",
+      },
+      {
+        product: "ETF",
+        assetClass: "Renda variável",
+        geography: "Exterior",
+        knownValueCents: "30000",
+      },
+      {
+        product: "FII",
+        assetClass: "Fundos",
+        geography: "Brasil",
+        knownValueCents: "40000",
+      },
+      {
+        product: "Sem classe",
+        assetClass: null,
+        geography: null,
+        knownValueCents: "5000",
+      },
+    ]);
+
+    const strategy = calculateLongTermStrategyWealth(portfolio, [
+      {
+        id: "reserve-id",
+        kind: "RESERVE",
+        purpose: null,
+        name: "Reserva",
+        balanceTracking: {
+          observedAmountCents: "1000",
+          observedOn: "2026-11-14",
+        },
+      },
+      {
+        id: "travel-id",
+        kind: "CUSTOM",
+        purpose: "PERSONAL_GOAL",
+        name: "Viagem",
+        balanceTracking: {
+          observedAmountCents: "1500",
+          observedOn: "2026-11-16",
+        },
+      },
+      {
+        id: "long-term-id",
+        kind: "CUSTOM",
+        purpose: "LONG_TERM_INVESTMENT",
+        name: "Longo prazo",
+        balanceTracking: {
+          observedAmountCents: "7000",
+          observedOn: "2026-11-16",
+        },
+      },
+    ]);
+
+    expect(portfolio.knownValueCents).toBe("105000");
+    expect(strategy).toMatchObject({
+      complete: true,
+      knownValueCents: "102500",
+      excludedBalanceCents: "2500",
+      excludedObjectives: [
+        { name: "Reserva", amountCents: "1000", observedOn: "2026-11-14" },
+        { name: "Viagem", amountCents: "1500", observedOn: "2026-11-16" },
+      ],
+      classes: [
+        { id: "fixed_income", knownValueCents: "7500" },
+        { id: "brazilian_equities", knownValueCents: "20000" },
+        { id: "international_etfs", knownValueCents: "30000" },
+        { id: "fiis", knownValueCents: "40000" },
+      ],
+    });
+    expect(
+      strategy.classes.map(
+        ({ percentageBasisPoints }) => percentageBasisPoints,
+      ),
+    ).toEqual([732, 1951, 2927, 3902]);
+  });
+
+  it("does not assume missing objective balances are zero", () => {
+    const portfolio = summarizeStrategyAllocation([
+      {
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        knownValueCents: "10000",
+      },
+    ]);
+    const strategy = calculateLongTermStrategyWealth(portfolio, [
+      {
+        id: "travel-id",
+        kind: "CUSTOM",
+        purpose: "PERSONAL_GOAL",
+        name: "Viagem",
+        balanceTracking: null,
+      },
+    ]);
+
+    expect(strategy).toMatchObject({
+      complete: false,
+      limitation: "missing_objective_balance",
+      knownValueCents: null,
+      missingObjectiveNames: ["Viagem"],
+      classes: [],
+    });
+  });
+
+  it("does not clamp objective balances that exceed known fixed income", () => {
+    const portfolio = summarizeStrategyAllocation([
+      {
+        product: "CDB",
+        assetClass: "Renda fixa",
+        geography: "Brasil",
+        knownValueCents: "10000",
+      },
+    ]);
+    const strategy = calculateLongTermStrategyWealth(portfolio, [
+      {
+        id: "reserve-id",
+        kind: "RESERVE",
+        purpose: null,
+        name: "Reserva",
+        balanceTracking: {
+          observedAmountCents: "10001",
+          observedOn: "2026-11-14",
+        },
+      },
+    ]);
+
+    expect(strategy).toMatchObject({
+      complete: false,
+      limitation: "objective_balances_exceed_fixed_income",
+      knownValueCents: null,
+      excludedBalanceCents: "10001",
+      classes: [],
+    });
+  });
+
   it("classifies positions using the strategy's shared asset groups", () => {
     expect(
       getStrategyAssetClassId({

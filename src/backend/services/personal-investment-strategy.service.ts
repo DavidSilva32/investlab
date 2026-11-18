@@ -4,14 +4,16 @@ import { personalInvestmentStrategyRepository } from "@/backend/repositories/per
 import { portfolioAllocationService } from "@/backend/services/portfolio-allocation.service";
 import { portfolioPositionService } from "@/backend/services/portfolio-position.service";
 import { emergencyReserveService } from "@/backend/services/emergency-reserve.service";
+import { portfolioObjectivesService } from "@/backend/services/portfolio-objectives.service";
 import { todayInSaoPaulo } from "@/lib/valuation-date";
 import { calculateReservePriorityAmounts } from "@/lib/contribution-allocation";
 import {
-  getStrategyAssetClassId,
+  calculateLongTermStrategyWealth,
   summarizeStrategyAllocation,
   simulateStrategyContribution,
   strategyAssetClasses,
   type StrategyAllocationPercentages,
+  type StrategyObjectiveBalance,
 } from "@/lib/strategy-allocation";
 
 const answerSchema = z.object({
@@ -76,6 +78,7 @@ export class PersonalInvestmentStrategyService {
     private readonly repository = personalInvestmentStrategyRepository,
     private readonly reserve = emergencyReserveService,
     private readonly today = todayInSaoPaulo,
+    private readonly objectives = portfolioObjectivesService,
   ) {}
 
   async getOverview(requestId?: string) {
@@ -105,6 +108,11 @@ export class PersonalInvestmentStrategyService {
       0n,
     );
     const allocation = summarizeStrategyAllocation(positions);
+    const objectiveOverview = await this.objectives.getOverview(requestId);
+    const strategyWealth = calculateLongTermStrategyWealth(
+      allocation,
+      objectiveOverview.objectives as StrategyObjectiveBalance[],
+    );
     const portfolioKnownCents = BigInt(allocation.knownValueCents);
     const effectiveDateGroups = positions.map((position) => ({
       positionCount: position.positionCount,
@@ -163,6 +171,7 @@ export class PersonalInvestmentStrategyService {
         unclassifiedPositionCount: allocation.unclassifiedPositionCount,
         classes: allocation.classes,
       },
+      strategyWealth,
       maturityDates: [...maturityCounts]
         .map(([date, count]) => ({ date, count }))
         .sort((left, right) => left.date.localeCompare(right.date)),
@@ -267,6 +276,7 @@ export class PersonalInvestmentStrategyService {
     if (priority.remainingCents === null || priority.remainingCents === 0) {
       return {
         ...reservePriority,
+        strategyBalanceContext: null,
         simulation: null,
       };
     }
@@ -282,22 +292,36 @@ export class PersonalInvestmentStrategyService {
       referenceDate: position.referenceDate ?? null,
       unvaluedPositions: position.canonicalValueCents === null ? 1 : 0,
     }));
-    const currentValuesCents = Object.fromEntries(
-      groups.map(({ id }) => [id, "0"]),
-    ) as Record<(typeof groups)[number]["id"], string>;
-    let unclassifiedKnownValueCents = 0n;
-    for (const position of positions) {
-      const knownValueCents = BigInt(position.knownValueCents);
-      if (knownValueCents === 0n) continue;
-      const group = getStrategyAssetClassId(position);
-      if (group) {
-        currentValuesCents[group] = (
-          BigInt(currentValuesCents[group]) + knownValueCents
-        ).toString();
-      } else {
-        unclassifiedKnownValueCents += knownValueCents;
-      }
+    const allocation = summarizeStrategyAllocation(positions);
+    const objectiveOverview = await this.objectives.getOverview(requestId);
+    const strategyWealth = calculateLongTermStrategyWealth(
+      allocation,
+      objectiveOverview.objectives as StrategyObjectiveBalance[],
+    );
+    const strategyBalanceContext = {
+      complete: strategyWealth.complete,
+      limitation: strategyWealth.limitation,
+      excludedBalanceCents: strategyWealth.excludedBalanceCents,
+      excludedObjectives: strategyWealth.excludedObjectives,
+      missingObjectiveNames: strategyWealth.missingObjectiveNames,
+    };
+    if (!strategyWealth.complete) {
+      return {
+        ...reservePriority,
+        strategyBalanceContext,
+        simulation: null,
+      };
     }
+    const currentValuesCents = Object.fromEntries(
+      groups.map(({ id }) => [
+        id,
+        strategyWealth.classes.find((assetClass) => assetClass.id === id)
+          ?.knownValueCents ?? "0",
+      ]),
+    ) as Record<(typeof groups)[number]["id"], string>;
+    const unclassifiedKnownValueCents = BigInt(
+      allocation.unclassifiedKnownValueCents,
+    );
     const result = simulateStrategyContribution({
       currentValuesCents,
       targetPercentages: parsed.allocationPercentages,
@@ -305,6 +329,7 @@ export class PersonalInvestmentStrategyService {
     });
     return {
       ...reservePriority,
+      strategyBalanceContext,
       simulation: {
         ...result,
         completeness: {

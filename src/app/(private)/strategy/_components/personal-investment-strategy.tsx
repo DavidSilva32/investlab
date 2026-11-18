@@ -27,6 +27,23 @@ type StrategyData = {
     unclassifiedPositionCount: number;
     classes: StrategyClassValue[];
   };
+  strategyWealth: {
+    complete: boolean;
+    limitation:
+      | "missing_objective_balance"
+      | "objective_balances_exceed_fixed_income"
+      | null;
+    knownValueCents: string | null;
+    excludedBalanceCents: string;
+    excludedObjectives: Array<{
+      id: string;
+      name: string;
+      amountCents: string | null;
+      observedOn: string | null;
+    }>;
+    missingObjectiveNames: string[];
+    classes: StrategyClassValue[];
+  };
   savedAllocationPercentages: StrategyAllocationPercentages | null;
   allocationActive: boolean;
 };
@@ -169,6 +186,49 @@ export function PersonalInvestmentStrategy() {
         </Alert>
       )}
 
+      <Alert variant={data.strategyWealth.complete ? "default" : "destructive"}>
+        <AlertTitle>
+          {data.strategyWealth.complete
+            ? "A estratégia considera apenas investimentos de longo prazo"
+            : "Não foi possível calcular a composição de longo prazo"}
+        </AlertTitle>
+        <AlertDescription>
+          <p>
+            Reserva e objetivos pessoais continuam no patrimônio da carteira,
+            mas ficam fora dos percentuais da estratégia.
+          </p>
+          {data.strategyWealth.excludedObjectives.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {data.strategyWealth.excludedObjectives.map((objective) => (
+                <li key={objective.id}>
+                  {objective.name}:{" "}
+                  {objective.amountCents === null
+                    ? "saldo não informado"
+                    : formatCurrencyCents(objective.amountCents)}
+                  {objective.observedOn
+                    ? ` · informado em ${formatDate(objective.observedOn)}`
+                    : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {data.strategyWealth.limitation === "missing_objective_balance" && (
+            <p className="mt-2">
+              Informe o saldo mais recente de cada objetivo para calcular os
+              percentuais sem estimativas.
+            </p>
+          )}
+          {data.strategyWealth.limitation ===
+            "objective_balances_exceed_fixed_income" && (
+            <p className="mt-2">
+              Os saldos informados para esses objetivos superam a renda fixa
+              reconhecida na carteira. Revise os valores antes de usar a
+              estratégia.
+            </p>
+          )}
+        </AlertDescription>
+      </Alert>
+
       {data.portfolioWealth.positionCount === 0 ? (
         <div className="space-y-4">
           <Card>
@@ -193,7 +253,8 @@ export function PersonalInvestmentStrategy() {
         </div>
       ) : (
         <StrategyAllocationWorkspace
-          classes={data.portfolioWealth.classes}
+          classes={data.strategyWealth.classes}
+          strategySleeveComplete={data.strategyWealth.complete}
           knownValueCents={data.portfolioWealth.knownValueCents}
           valuationDate={data.valuationDate}
           valuationDates={data.valuationDates}

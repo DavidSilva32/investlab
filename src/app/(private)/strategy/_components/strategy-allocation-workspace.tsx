@@ -106,6 +106,7 @@ type StrategyContributionPreview = {
 
 type Props = {
   classes: StrategyClassValue[];
+  strategySleeveComplete: boolean;
   knownValueCents: string;
   valuationDate: string;
   valuationDates: string[];
@@ -150,6 +151,7 @@ function formatDate(value: string) {
 
 export function StrategyAllocationWorkspace({
   classes,
+  strategySleeveComplete,
   knownValueCents,
   valuationDate,
   valuationDates,
@@ -163,7 +165,7 @@ export function StrategyAllocationWorkspace({
   onActivated,
 }: Props) {
   const searchParams = useSearchParams();
-  const contributionPrefill = searchParams.get("aporteCents");
+  const contributionPrefill = searchParams?.get("aporteCents");
   const initialContributionAmount =
     contributionPrefill &&
     /^\d+$/.test(contributionPrefill) &&
@@ -172,6 +174,7 @@ export function StrategyAllocationWorkspace({
       ? formatAmountInput(contributionPrefill)
       : "";
   const baselineComplete =
+    strategySleeveComplete &&
     BigInt(knownValueCents) > 0n &&
     BigInt(unclassifiedKnownValueCents) === 0n &&
     unvaluedPositionCount === 0;
@@ -238,9 +241,13 @@ export function StrategyAllocationWorkspace({
       : "Ajustando composição"
     : saved
       ? "Composição planejada"
-      : "Distribuição atual";
+      : strategySleeveComplete
+        ? "Distribuição atual"
+        : "Distribuição atual indisponível";
   const chartData: StrategyCompositionRow[] = [
-    { name: "Atual", ...currentPercentages },
+    ...(strategySleeveComplete
+      ? [{ name: "Atual", ...currentPercentages }]
+      : []),
     ...(targetPercentages && (saved || draftChanged)
       ? [{ name: saved ? "Planejada" : "Em edição", ...targetPercentages }]
       : []),
@@ -493,7 +500,17 @@ export function StrategyAllocationWorkspace({
               <CardTitle>Distribuição por classe</CardTitle>
             </CardHeader>
             <CardContent>
-              <StrategyAllocationChart data={chartData} />
+              {strategySleeveComplete ? (
+                <StrategyAllocationChart data={chartData} />
+              ) : (
+                <Alert>
+                  <AlertTitle>Distribuição indisponível</AlertTitle>
+                  <AlertDescription>
+                    Corrija a informação descrita acima para calcular a
+                    composição de longo prazo.
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -547,9 +564,11 @@ export function StrategyAllocationWorkspace({
                           id={`strategy-${id}-current`}
                           className="font-semibold tabular-nums"
                         >
-                          {current
-                            ? formatCurrencyCents(current.knownValueCents)
-                            : "Sem valor classificado"}
+                          {!strategySleeveComplete
+                            ? "Indisponível até atualizar os saldos dos objetivos"
+                            : current
+                              ? formatCurrencyCents(current.knownValueCents)
+                              : "Sem valor classificado"}
                         </p>
                       </div>
                     </div>
@@ -690,11 +709,19 @@ export function StrategyAllocationWorkspace({
             <Button
               variant="secondary"
               onClick={() => void simulate()}
-              disabled={!targetPercentages || simulating}
+              disabled={
+                !targetPercentages || !strategySleeveComplete || simulating
+              }
             >
               {simulating ? "Calculando…" : "Simular aporte"}
             </Button>
           </div>
+          {!strategySleeveComplete && (
+            <p className="text-sm text-muted-foreground">
+              Corrija a informação indicada acima para simular a distribuição do
+              aporte.
+            </p>
+          )}
           <NextContributionStockOpportunities />
           {simulation && (
             <div
