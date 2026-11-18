@@ -41,6 +41,7 @@ import {
 import { getFinancialCategoryIcon } from "@/app/(private)/financas/_components/financial-category-icons";
 
 type Kind = "INCOME" | "EXPENSE";
+type EntryMode = "actual" | "planned" | "both";
 type Category = { id: string; kind: Kind; name: string; active: boolean };
 type Entry = {
   id: string;
@@ -106,6 +107,13 @@ function nextDueDate(value: string, frequency: Frequency) {
     .toISOString()
     .slice(0, 10);
 }
+
+function getEntryMode(entry: Entry | null): EntryMode {
+  if (entry?.expectedAmount && entry.actualAmount) return "both";
+  if (entry?.expectedAmount) return "planned";
+  return "actual";
+}
+
 export function FinancialEntryDialog({
   open,
   onOpenChange,
@@ -140,6 +148,9 @@ export function FinancialEntryDialog({
   const [quickCategoryOpen, setQuickCategoryOpen] = useState(false);
   const [quickCategories, setQuickCategories] = useState<Category[]>([]);
   const [createRecurrence, setCreateRecurrence] = useState(false);
+  const [entryMode, setEntryMode] = useState<EntryMode>(() =>
+    getEntryMode(entry),
+  );
   const [essential, setEssential] = useState(false);
   const [frequency, setFrequency] = useState<Frequency>("MONTHLY");
   const expectedAmountInputRef = useRef<HTMLInputElement>(null);
@@ -150,15 +161,31 @@ export function FinancialEntryDialog({
     [expectedDate, actualDate].filter(Boolean).sort().at(-1) ?? "";
   const nextOccurrence =
     createRecurrence && launchDate ? nextDueDate(launchDate, frequency) : "";
-  const expectedPairValid = Boolean(expectedAmount) === Boolean(expectedDate);
-  const actualPairValid = Boolean(actualAmount) === Boolean(actualDate);
-  const hasAmount = Boolean(expectedAmount || actualAmount);
+  const recurringEntry = Boolean(entry?.recurrenceId);
+  const showExpectedFields =
+    recurringEntry || createRecurrence || entryMode !== "actual";
+  const showActualFields =
+    recurringEntry || createRecurrence || entryMode !== "planned";
+  const expectedPairValid =
+    !showExpectedFields || Boolean(expectedAmount) === Boolean(expectedDate);
+  const actualPairValid =
+    !showActualFields || Boolean(actualAmount) === Boolean(actualDate);
+  const hasAmount =
+    createRecurrence || recurringEntry
+      ? Boolean(expectedAmount || actualAmount)
+      : entryMode === "actual"
+        ? Boolean(actualAmount)
+        : entryMode === "planned"
+          ? Boolean(expectedAmount)
+          : Boolean(expectedAmount && actualAmount);
   const parsedExpectedAmount = parseBrazilianAmount(expectedAmount);
   const parsedActualAmount = parseBrazilianAmount(actualAmount);
   const expectedAmountValid =
+    !showExpectedFields ||
     !expectedAmount ||
     (Number.isFinite(parsedExpectedAmount) && parsedExpectedAmount > 0);
   const actualAmountValid =
+    !showActualFields ||
     !actualAmount ||
     (Number.isFinite(parsedActualAmount) && parsedActualAmount > 0);
   const available = categories.filter(
@@ -222,10 +249,23 @@ export function FinancialEntryDialog({
     if (!checked) setEssential(false);
   }
 
+  function changeEntryMode(nextMode: EntryMode) {
+    setEntryMode(nextMode);
+    if (nextMode === "actual") {
+      setExpectedAmount("");
+      setExpectedDate("");
+    }
+    if (nextMode === "planned") {
+      setActualAmount("");
+      setActualDate("");
+    }
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     setCreateRecurrence(false);
     setEssential(false);
     setFrequency("MONTHLY");
+    if (!nextOpen && !entry) setEntryMode("actual");
     onOpenChange(nextOpen);
   }
 
@@ -239,10 +279,12 @@ export function FinancialEntryDialog({
         description,
         categoryId,
         recurrenceId: entry?.recurrenceId ?? null,
-        expectedAmount: expectedAmount ? parsedExpectedAmount : null,
-        expectedDate: expectedDate || null,
-        actualAmount: actualAmount ? parsedActualAmount : null,
-        actualDate: actualDate || null,
+        expectedAmount:
+          showExpectedFields && expectedAmount ? parsedExpectedAmount : null,
+        expectedDate: showExpectedFields ? expectedDate || null : null,
+        actualAmount:
+          showActualFields && actualAmount ? parsedActualAmount : null,
+        actualDate: showActualFields ? actualDate || null : null,
         ...(createRecurrence
           ? {
               recurrence: {
@@ -287,7 +329,7 @@ export function FinancialEntryDialog({
             {entry ? "Editar lançamento" : "Novo lançamento"}
           </DialogTitle>
           <DialogDescription>
-            Registre o previsto, o realizado ou os dois valores com suas datas.
+            Registre o que já aconteceu ou escolha planejar para depois.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => void save(event)} className="space-y-4">
@@ -368,6 +410,29 @@ export function FinancialEntryDialog({
               </SelectContent>
             </Select>
           </div>
+          {!recurringEntry && !createRecurrence && (
+            <div className="space-y-2">
+              <Label htmlFor="financial-entry-mode">Situação</Label>
+              <Select
+                value={entryMode}
+                onValueChange={(value) => changeEntryMode(value as EntryMode)}
+              >
+                <SelectTrigger
+                  id="financial-entry-mode"
+                  aria-label="Situação do lançamento"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="actual">Já aconteceu</SelectItem>
+                  <SelectItem value="planned">Quero planejar</SelectItem>
+                  <SelectItem value="both">
+                    Registrar previsto e realizado
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <section className="space-y-3 rounded-xl border p-4">
             <label className="flex cursor-pointer items-start gap-3">
               <Checkbox
@@ -485,100 +550,110 @@ export function FinancialEntryDialog({
             )}
           </section>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-3 rounded-xl border p-4">
-              <p className="text-sm font-medium">Previsto</p>
-              <div className="space-y-2">
-                <Label htmlFor="expected-amount">Valor (R$)</Label>
-                <Input
-                  id="expected-amount"
-                  ref={expectedAmountInputRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={expectedAmount}
-                  placeholder="R$ 0,00"
-                  onChange={(event) =>
-                    handleAmountChange(
-                      event.target.value,
-                      event.target.selectionStart,
-                      event.target.selectionEnd,
-                      event.target.selectionDirection,
-                      setExpectedAmount,
-                      expectedSelectionRef,
-                    )
-                  }
+            {showExpectedFields && (
+              <div className="space-y-3 rounded-xl border p-4">
+                <p className="text-sm font-medium">Previsto</p>
+                <div className="space-y-2">
+                  <Label htmlFor="expected-amount">Valor (R$)</Label>
+                  <Input
+                    id="expected-amount"
+                    ref={expectedAmountInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={expectedAmount}
+                    placeholder="R$ 0,00"
+                    onChange={(event) =>
+                      handleAmountChange(
+                        event.target.value,
+                        event.target.selectionStart,
+                        event.target.selectionEnd,
+                        event.target.selectionDirection,
+                        setExpectedAmount,
+                        expectedSelectionRef,
+                      )
+                    }
+                  />
+                </div>
+                <DatePickerField
+                  id="expected-date"
+                  label="Data prevista"
+                  value={expectedDate}
+                  onChange={setExpectedDate}
                 />
               </div>
-              <DatePickerField
-                id="expected-date"
-                label="Data prevista"
-                value={expectedDate}
-                onChange={setExpectedDate}
-              />
-            </div>
-            <div className="space-y-3 rounded-xl border p-4">
-              <p className="text-sm font-medium">Realizado</p>
-              <div className="space-y-2">
-                <Label htmlFor="actual-amount">Valor (R$)</Label>
-                <Input
-                  id="actual-amount"
-                  ref={actualAmountInputRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={actualAmount}
-                  placeholder="R$ 0,00"
-                  onChange={(event) =>
-                    handleAmountChange(
-                      event.target.value,
-                      event.target.selectionStart,
-                      event.target.selectionEnd,
-                      event.target.selectionDirection,
-                      setActualAmount,
-                      actualSelectionRef,
-                    )
-                  }
+            )}
+            {showActualFields && (
+              <div className="space-y-3 rounded-xl border p-4">
+                <p className="text-sm font-medium">Realizado</p>
+                <div className="space-y-2">
+                  <Label htmlFor="actual-amount">Valor (R$)</Label>
+                  <Input
+                    id="actual-amount"
+                    ref={actualAmountInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={actualAmount}
+                    placeholder="R$ 0,00"
+                    onChange={(event) =>
+                      handleAmountChange(
+                        event.target.value,
+                        event.target.selectionStart,
+                        event.target.selectionEnd,
+                        event.target.selectionDirection,
+                        setActualAmount,
+                        actualSelectionRef,
+                      )
+                    }
+                  />
+                </div>
+                <DatePickerField
+                  id="actual-date"
+                  label="Data realizada"
+                  value={actualDate}
+                  onChange={setActualDate}
                 />
               </div>
-              <DatePickerField
-                id="actual-date"
-                label="Data realizada"
-                value={actualDate}
-                onChange={setActualDate}
-              />
-            </div>
+            )}
           </div>
-          {!expectedAmount && !actualAmount && (
+          {!hasAmount && (
             <p role="alert" className="text-sm text-destructive">
-              Informe ao menos um valor e a data correspondente.
+              {entryMode === "actual" && !createRecurrence
+                ? "Informe o valor e a data realizados."
+                : entryMode === "planned" && !createRecurrence
+                  ? "Informe o valor e a data previstos."
+                  : entryMode === "both" && !createRecurrence
+                    ? "Informe o valor e a data previstos e realizados."
+                    : "Informe ao menos um valor e a data correspondente."}
             </p>
           )}
-          {expectedAmount && !expectedDate && (
+          {showExpectedFields && expectedAmount && !expectedDate && (
             <p role="alert" className="text-sm text-destructive">
               Informe a data prevista para este valor.
             </p>
           )}
-          {!expectedAmount && expectedDate && (
+          {showExpectedFields && !expectedAmount && expectedDate && (
             <p role="alert" className="text-sm text-destructive">
               Informe o valor previsto para esta data.
             </p>
           )}
-          {actualAmount && !actualDate && (
+          {showActualFields && actualAmount && !actualDate && (
             <p role="alert" className="text-sm text-destructive">
               Informe a data realizada para este valor.
             </p>
           )}
-          {!actualAmount && actualDate && (
+          {showActualFields && !actualAmount && actualDate && (
             <p role="alert" className="text-sm text-destructive">
               Informe o valor realizado para esta data.
             </p>
           )}
-          {!expectedAmountValid && (
+          {showExpectedFields && !expectedAmountValid && (
             <p role="alert" className="text-sm text-destructive">
               Informe um valor previsto maior que R$ 0,00.
             </p>
           )}
-          {!actualAmountValid && (
+          {showActualFields && !actualAmountValid && (
             <p role="alert" className="text-sm text-destructive">
               Informe um valor realizado maior que R$ 0,00.
             </p>

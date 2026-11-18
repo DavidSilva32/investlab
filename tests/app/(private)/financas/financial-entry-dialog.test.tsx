@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 describe("FinancialEntryDialog", () => {
-  it("presents paired expected and actual amount/date fields with a selected category", () => {
+  it("starts with a simple realized-only form and offers planning modes", () => {
     renderDialog(
       <FinancialEntryDialog
         open
@@ -86,17 +86,13 @@ describe("FinancialEntryDialog", () => {
     expect(
       screen.getByRole("dialog", { name: "Novo lançamento" }),
     ).toBeTruthy();
-    expect(screen.getAllByRole("combobox")).toHaveLength(2);
-    expect(screen.getAllByLabelText("Valor (R$)")).toHaveLength(2);
-    expect(screen.getByLabelText("Data prevista")).toBeTruthy();
+    expect(screen.getAllByRole("combobox")).toHaveLength(3);
+    expect(screen.getAllByLabelText("Valor (R$)")).toHaveLength(1);
+    expect(screen.queryByLabelText("Data prevista")).toBeNull();
     expect(screen.getByLabelText("Data realizada")).toBeTruthy();
     expect(
-      (
-        screen.getByLabelText("Valor (R$)", {
-          selector: "#expected-amount",
-        }) as HTMLInputElement
-      ).type,
-    ).toBe("text");
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         "Este lançamento será a primeira ocorrência. A próxima será calculada pela periodicidade.",
@@ -191,6 +187,12 @@ describe("FinancialEntryDialog", () => {
       />,
     );
 
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
+    );
     await user.type(screen.getByLabelText("Descrição"), "Aluguel");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
@@ -231,6 +233,12 @@ describe("FinancialEntryDialog", () => {
       />,
     );
 
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
+    );
     await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
@@ -258,7 +266,7 @@ describe("FinancialEntryDialog", () => {
       />,
     );
     const amountInput = screen.getByLabelText("Valor (R$)", {
-      selector: "#expected-amount",
+      selector: "#actual-amount",
     }) as HTMLInputElement;
     Object.defineProperty(amountInput, "selectionStart", {
       configurable: true,
@@ -395,6 +403,14 @@ describe("FinancialEntryDialog", () => {
       />,
     );
 
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Registrar previsto e realizado",
+      }),
+    );
     await user.type(screen.getByLabelText("Data prevista"), "10/10/2026");
     expect(
       screen.getByText("Informe o valor previsto para esta data."),
@@ -404,6 +420,12 @@ describe("FinancialEntryDialog", () => {
     expect(
       screen.getByText("Informe o valor realizado para esta data."),
     ).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Já aconteceu" }),
+    );
 
     await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
@@ -414,8 +436,10 @@ describe("FinancialEntryDialog", () => {
     );
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
 
-    expect(toast.error).toHaveBeenCalledWith(
-      "Não foi possível salvar o lançamento.",
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível salvar o lançamento.",
+      ),
     );
   });
 
@@ -450,6 +474,12 @@ describe("FinancialEntryDialog", () => {
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Saúde" }));
     await user.type(screen.getByLabelText("Descrição"), "Consulta médica");
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
+    );
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
       "18000",
@@ -561,6 +591,12 @@ describe("FinancialEntryDialog", () => {
         ]}
       />,
     );
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
+    );
     await user.type(screen.getByLabelText("Descrição"), "Aluguel");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
@@ -611,6 +647,14 @@ describe("FinancialEntryDialog", () => {
         onSaved={() => {}}
       />,
     );
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Registrar previsto e realizado",
+      }),
+    );
     await user.type(screen.getByLabelText("Descrição"), "Aluguel");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
@@ -652,6 +696,12 @@ describe("FinancialEntryDialog", () => {
         entry={null}
         onSaved={() => {}}
       />,
+    );
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
     );
     await user.type(screen.getByLabelText("Descrição"), "Conta de luz");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
@@ -860,6 +910,35 @@ describe("FinancialEntryDialog", () => {
         })
         .getAttribute("aria-checked"),
     ).toBe("false");
+  });
+
+  it("resets a new launch to realized-only mode after closing", async () => {
+    const user = userEvent.setup();
+    renderDialog(<StatefulEntryDialog />);
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Quero planejar" }),
+    );
+    expect(
+      screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await user.click(screen.getByRole("button", { name: "Abrir lançamento" }));
+
+    expect(
+      screen.getByRole("combobox", { name: "Situação do lançamento" })
+        .textContent,
+    ).toBe("Já aconteceu");
+    expect(
+      screen.queryByLabelText("Valor (R$)", { selector: "#expected-amount" }),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Valor (R$)", { selector: "#actual-amount" }),
+    ).toBeTruthy();
   });
 
   it("derives the next recurrence date from the launch date and selected frequency", async () => {
