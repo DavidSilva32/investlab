@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   updateEntry: vi.fn(),
   deleteEntry: vi.fn(),
   getOverview: vi.fn(),
+  simulateCapacity: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("@/backend/controllers/financial.controller", () => ({
     updateEntry: state.updateEntry,
     deleteEntry: state.deleteEntry,
     getOverview: state.getOverview,
+    simulateMonthlyCapacity: state.simulateCapacity,
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -50,6 +52,7 @@ import {
   POST as postEntries,
 } from "@/app/api/financial-entries/route";
 import { GET as getOverview } from "@/app/api/finance-overview/route";
+import { POST as postCapacity } from "@/app/api/finance-capacity/route";
 
 function request(method: string, path: string) {
   return new Request(`http://localhost${path}`, {
@@ -221,6 +224,29 @@ describe("financial API routes", () => {
       ],
     ] as const;
 
+    const capacityRequest = new Request(
+      "http://localhost/api/finance-capacity",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          month: "2026-12",
+          incomeReduction: "0.00",
+          expenseIncrease: "0.00",
+        }),
+        headers: { "content-type": "application/json" },
+      },
+    );
+    state.simulateCapacity.mockResolvedValueOnce(Response.json({ ok: true }));
+    expect((await postCapacity(capacityRequest)).status).toBe(200);
+    expect(state.simulateCapacity).toHaveBeenCalledWith(
+      {
+        month: "2026-12",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      },
+      "request-test",
+    );
+
     for (const [handler, controller, method, path, fallback] of cases) {
       controller.mockRejectedValueOnce(
         new ApplicationError("Dados inválidos.", 400),
@@ -236,5 +262,45 @@ describe("financial API routes", () => {
       expect(await unexpected.json()).toEqual({ message: fallback });
       expect(state.error).toHaveBeenCalled();
     }
+
+    state.simulateCapacity.mockRejectedValueOnce(
+      new ApplicationError("Dados inválidos.", 400),
+    );
+    const expectedCapacity = await postCapacity(
+      new Request("http://localhost/api/finance-capacity", {
+        method: "POST",
+        body: JSON.stringify({
+          month: "2026-12",
+          incomeReduction: "0.00",
+          expenseIncrease: "0.00",
+        }),
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(expectedCapacity.status).toBe(400);
+    expect(await expectedCapacity.json()).toEqual({
+      message: "Dados inválidos.",
+    });
+    expect(state.warn).toHaveBeenCalled();
+
+    state.simulateCapacity.mockRejectedValueOnce(
+      new Error("private database details"),
+    );
+    const unexpectedCapacity = await postCapacity(
+      new Request("http://localhost/api/finance-capacity", {
+        method: "POST",
+        body: JSON.stringify({
+          month: "2026-12",
+          incomeReduction: "0.00",
+          expenseIncrease: "0.00",
+        }),
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(unexpectedCapacity.status).toBe(500);
+    expect(await unexpectedCapacity.json()).toEqual({
+      message: "Não foi possível simular a capacidade mensal.",
+    });
+    expect(state.error).toHaveBeenCalled();
   });
 });

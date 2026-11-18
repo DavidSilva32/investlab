@@ -4,6 +4,7 @@ import { FinancialEntryDialog as EntryDialog } from "@/app/(private)/financas/_c
 import { FinancialEntriesTable } from "@/app/(private)/financas/_components/financial-entries-table";
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
+import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
 import { FinancialRecurrencesSheet as RecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -297,6 +298,7 @@ export function FinancialOverview() {
               compromisso recorrente para acompanhar seu fluxo.
             </p>
           )}
+          <FinancialCapacitySimulator key={month} month={month} />
           {!!data?.summary.undatedRecurringRealizations && (
             <p
               role="status"

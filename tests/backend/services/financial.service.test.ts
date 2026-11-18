@@ -869,6 +869,210 @@ describe("FinancialService", () => {
     });
   });
 
+  it("simulates income and expense changes with exact cents without saving data", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        kind: "INCOME",
+        expectedAmount: "8000.00",
+        expectedDate: "2026-12-01",
+        actualAmount: null,
+        actualDate: null,
+      }),
+      entry({
+        kind: "EXPENSE",
+        expectedAmount: "6000.00",
+        expectedDate: "2026-12-05",
+        actualAmount: null,
+        actualDate: null,
+      }),
+    ]);
+
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "125.25",
+        expenseIncrease: "300.10",
+      }),
+    ).resolves.toEqual({
+      month: "2026-12",
+      baseBalanceCents: "200000",
+      incomeReductionCents: "12525",
+      expenseIncreaseCents: "30010",
+      simulatedBalanceCents: "157465",
+      status: "positive",
+      completeness: "recorded_only",
+      canSimulateStrategy: true,
+    });
+    expect(repositories.createEntry).not.toHaveBeenCalled();
+    expect(repositories.updateEntry).not.toHaveBeenCalled();
+  });
+
+  it("keeps a missing monthly balance unavailable rather than treating it as zero", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      }),
+    ).resolves.toMatchObject({
+      month: "2026-12",
+      baseBalanceCents: null,
+      simulatedBalanceCents: null,
+      status: "unavailable",
+      completeness: "no_data",
+      canSimulateStrategy: false,
+    });
+  });
+
+  it("classifies zero and negative scenario balances without suggesting investment", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        kind: "INCOME",
+        expectedAmount: "100.00",
+        expectedDate: "2026-12-01",
+        actualAmount: null,
+        actualDate: null,
+      }),
+      entry({
+        kind: "EXPENSE",
+        expectedAmount: "100.00",
+        expectedDate: "2026-12-02",
+        actualAmount: null,
+        actualDate: null,
+      }),
+    ]);
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      }),
+    ).resolves.toMatchObject({
+      simulatedBalanceCents: "0",
+      status: "zero",
+      canSimulateStrategy: false,
+    });
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "1.00",
+        expenseIncrease: "0.00",
+      }),
+    ).resolves.toMatchObject({
+      simulatedBalanceCents: "-100",
+      status: "negative",
+      canSimulateStrategy: false,
+    });
+  });
+
+  it("preserves negative fractional balances in capacity simulation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        kind: "INCOME",
+        expectedAmount: "100.25",
+        expectedDate: "2026-12-01",
+        actualAmount: null,
+        actualDate: null,
+      }),
+      entry({
+        kind: "EXPENSE",
+        expectedAmount: "200.75",
+        expectedDate: "2026-12-02",
+        actualAmount: null,
+        actualDate: null,
+      }),
+    ]);
+
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      }),
+    ).resolves.toMatchObject({
+      baseBalanceCents: "-10050",
+      simulatedBalanceCents: "-10050",
+      status: "negative",
+      canSimulateStrategy: false,
+    });
+  });
+
+  it("includes current-month actual-only entries in the simulation base", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        kind: "INCOME",
+        expectedAmount: "5000.00",
+        expectedDate: "2026-11-01",
+        actualAmount: null,
+        actualDate: null,
+      }),
+      entry({
+        kind: "EXPENSE",
+        expectedAmount: "3000.00",
+        expectedDate: "2026-11-05",
+        actualAmount: null,
+        actualDate: null,
+      }),
+      entry({
+        id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        kind: "EXPENSE",
+        expectedAmount: null,
+        expectedDate: null,
+        actualAmount: "125.50",
+        actualDate: "2026-11-12",
+      }),
+    ]);
+
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-11",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      }),
+    ).resolves.toMatchObject({
+      baseBalanceCents: "187450",
+      simulatedBalanceCents: "187450",
+      status: "positive",
+    });
+  });
+
+  it("rejects invalid amounts and historical months for capacity simulation", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "1.001",
+        expenseIncrease: "0.00",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeReduction: "invalid",
+        expenseIncrease: "0.00",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-10",
+        incomeReduction: "0.00",
+        expenseIncrease: "0.00",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it("returns unknown totals instead of presenting an empty period as zero", async () => {
     repositories.listRecurrences.mockResolvedValue([
       recurringExpense({ active: false, firstDueDate: "2026-11-01" }),

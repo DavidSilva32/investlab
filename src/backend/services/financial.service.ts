@@ -68,6 +68,15 @@ function monthRange(month: string) {
   };
 }
 
+function currentFinancialMonth(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
+}
+
 function monthKeysThrough(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastIndex = year * 12 + monthNumber - 1;
@@ -85,7 +94,11 @@ function normalizeName(value: string) {
 
 function parseCents(value: string) {
   const [whole, fraction = ""] = value.split(".");
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0").slice(0, 2));
+  const sign = whole.startsWith("-") ? -1n : 1n;
+  const absoluteWhole = whole.startsWith("-") ? whole.slice(1) : whole;
+  const absoluteCents =
+    BigInt(absoluteWhole) * 100n + BigInt(fraction.padEnd(2, "0").slice(0, 2));
+  return sign * absoluteCents;
 }
 
 function formatCents(value: bigint) {
@@ -93,6 +106,17 @@ function formatCents(value: bigint) {
   const absolute = value < 0n ? -value : value;
   return `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
 }
+
+const capacityAmountSchema = z
+  .string()
+  .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/);
+const capacitySimulationSchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-\d{2}$/),
+    incomeReduction: capacityAmountSchema,
+    expenseIncrease: capacityAmountSchema,
+  })
+  .strict();
 
 function sumAmounts(values: Array<string | null | undefined>) {
   const amounts = values.filter(
@@ -371,6 +395,84 @@ export class FinancialService {
     const deleted = await financialRepository.deleteEntry(id);
     if (!deleted) throw new ApplicationError("Lançamento não encontrado.", 404);
     return deleted;
+  }
+
+  async simulateMonthlyCapacity(body: unknown) {
+    const parsed = capacitySimulationSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError(
+        "Informe um mês atual ou futuro e ajustes válidos em reais.",
+        400,
+      );
+    }
+    const { month } = parsed.data;
+    parseMonth(month);
+    if (!isProjectionMonth(month)) {
+      throw new ApplicationError(
+        "A simulação está disponível apenas para o mês atual ou futuro.",
+        400,
+      );
+    }
+
+    const overview = await this.getMonthlyOverview(month);
+    const baseBalance = overview.summary.expectedBalance;
+    const incomeReductionCents = parseCents(parsed.data.incomeReduction);
+    const expenseIncreaseCents = parseCents(parsed.data.expenseIncrease);
+    const currentRange = monthRange(month);
+    const actualOnlyAdjustmentCents =
+      month === currentFinancialMonth()
+        ? overview.entries.reduce((balance, entry) => {
+            if (
+              entry.expectedAmount !== null ||
+              entry.actualAmount === null ||
+              !isWithin(
+                entry.actualDate,
+                currentRange.startDate,
+                currentRange.endDate,
+              )
+            ) {
+              return balance;
+            }
+            const actualCents = parseCents(entry.actualAmount);
+            return (
+              balance + (entry.kind === "INCOME" ? actualCents : -actualCents)
+            );
+          }, 0n)
+        : 0n;
+    const baseBalanceInCents =
+      baseBalance === null
+        ? null
+        : parseCents(baseBalance) + actualOnlyAdjustmentCents;
+    const simulatedBalanceCents =
+      baseBalanceInCents === null
+        ? null
+        : (
+            baseBalanceInCents -
+            incomeReductionCents -
+            expenseIncreaseCents
+          ).toString();
+
+    return {
+      month,
+      baseBalanceCents:
+        baseBalanceInCents === null ? null : baseBalanceInCents.toString(),
+      incomeReductionCents: incomeReductionCents.toString(),
+      expenseIncreaseCents: expenseIncreaseCents.toString(),
+      simulatedBalanceCents,
+      status:
+        simulatedBalanceCents === null
+          ? "unavailable"
+          : BigInt(simulatedBalanceCents) > 0n
+            ? "positive"
+            : BigInt(simulatedBalanceCents) < 0n
+              ? "negative"
+              : "zero",
+      completeness: overview.summary.completeness,
+      canSimulateStrategy:
+        isProjectionMonth(month) &&
+        simulatedBalanceCents !== null &&
+        BigInt(simulatedBalanceCents) > 0n,
+    } as const;
   }
 
   async getMonthlyOverview(monthValue: string | null | undefined) {

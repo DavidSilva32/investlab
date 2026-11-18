@@ -95,6 +95,16 @@ export class FinancialController {
     });
     return Response.json(data);
   }
+
+  async simulateMonthlyCapacity(body: unknown, requestId: string) {
+    const data = await financialService.simulateMonthlyCapacity(body);
+    logger.info("financial_capacity_simulated", {
+      requestId,
+      month: data.month,
+      status: data.status,
+    });
+    return Response.json(data);
+  }
 }
 
 export const financialController = new FinancialController();

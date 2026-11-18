@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   updateEntry: vi.fn(),
   deleteEntry: vi.fn(),
   getMonthlyOverview: vi.fn(),
+  simulateMonthlyCapacity: vi.fn(),
   info: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ vi.mock("@/backend/services/financial.service", () => ({
     updateEntry: state.updateEntry,
     deleteEntry: state.deleteEntry,
     getMonthlyOverview: state.getMonthlyOverview,
+    simulateMonthlyCapacity: state.simulateMonthlyCapacity,
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -109,6 +111,29 @@ describe("FinancialController", () => {
       expect.objectContaining({
         requestId: "request-i",
         completeness: "recorded_only",
+      }),
+    );
+
+    const capacity = {
+      month: "2026-12",
+      status: "positive",
+      simulatedBalanceCents: "10000",
+    };
+    state.simulateMonthlyCapacity.mockResolvedValue(capacity);
+    const simulation = await controller.simulateMonthlyCapacity(
+      { month: "2026-12" },
+      "request-j",
+    );
+    expect(await simulation.json()).toEqual(capacity);
+    expect(state.simulateMonthlyCapacity).toHaveBeenCalledWith({
+      month: "2026-12",
+    });
+    expect(state.info).toHaveBeenCalledWith(
+      "financial_capacity_simulated",
+      expect.objectContaining({
+        requestId: "request-j",
+        month: "2026-12",
+        status: "positive",
       }),
     );
   });
