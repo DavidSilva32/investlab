@@ -42,7 +42,7 @@ describe("InvestLab OpenAPI document", () => {
       objectives.post?.responses["201"].content["application/json"].schema,
     ).toEqual({ $ref: "#/components/schemas/ObjectiveRecord" });
     expect(imports.delete?.responses["409"]).toBeDefined();
-    expect(previewSchema.oneOf).toHaveLength(3);
+    expect(previewSchema.oneOf).toHaveLength(4);
     expect(previewSchema.discriminator.propertyName).toBe("documentType");
   });
 });

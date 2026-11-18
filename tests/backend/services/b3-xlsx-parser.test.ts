@@ -75,37 +75,45 @@ describe("parseB3Xlsx", () => {
     });
   });
 
-  it("uses the existing position parser when the workbook has no first sheet", () => {
-    positionDocumentParser.mockReturnValue({
-      positions: [{ product: "ETF" }],
-    });
+  it("rejects a workbook without a recognized sheet", () => {
     const read = vi
       .spyOn(XLSX, "read")
       .mockReturnValue({ SheetNames: [], Sheets: {} } as never);
-    expect(parseB3Xlsx(Buffer.from("empty"))).toEqual({
-      documentType: "B3_POSITION_XLSX",
-      positions: [{ product: "ETF" }],
-    });
+    expect(() => parseB3Xlsx(Buffer.from("empty"))).toThrow(
+      "A planilha não corresponde a um formato B3 reconhecido.",
+    );
+    expect(positionDocumentParser).not.toHaveBeenCalled();
     read.mockImplementation(
       (XLSX as unknown as { __actualRead: typeof XLSX.read }).__actualRead,
     );
   });
-  it("delegates other worksheets to the existing position parser", () => {
+  it("delegates recognized position worksheets to the position parser", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "ETF" }],
     });
-    expect(parseB3Xlsx(workbookBuffer(["Produto", "Quantidade"]))).toEqual({
+    expect(
+      parseB3Xlsx(workbookBuffer(["Produto", "Quantidade", "Valor Atual"])),
+    ).toEqual({
       documentType: "B3_POSITION_XLSX",
       positions: [{ product: "ETF" }],
     });
   });
 
-  it("does not classify a position sheet with only one movement header as movement", () => {
+  it("does not classify a recognized position sheet with one movement header as movement", () => {
     positionDocumentParser.mockReturnValue({
       positions: [{ product: "Renda fixa" }],
     });
 
-    expect(parseB3Xlsx(workbookBuffer(["Entrada/Saída", "Produto"]))).toEqual({
+    expect(
+      parseB3Xlsx(
+        workbookBuffer([
+          "Entrada/Saída",
+          "Produto",
+          "Quantidade",
+          "Valor Atual",
+        ]),
+      ),
+    ).toEqual({
       documentType: "B3_POSITION_XLSX",
       positions: [{ product: "Renda fixa" }],
     });
