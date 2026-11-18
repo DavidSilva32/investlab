@@ -1,0 +1,447 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const api = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock("@/lib/api-client", () => ({ apiRequest: api.request }));
+
+import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
+
+const categories = [
+  {
+    id: "123e4567-e89b-42d3-a456-426614174000",
+    kind: "EXPENSE" as const,
+    name: "Alimentação",
+    active: true,
+  },
+  {
+    id: "223e4567-e89b-42d3-a456-426614174000",
+    kind: "INCOME" as const,
+    name: "Salário",
+    active: true,
+  },
+];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function mappedPreview(description: string, hash: string) {
+  return new Response(
+    JSON.stringify({
+      hash,
+      headers: ["Data", "Descrição", "Valor"],
+      mapping: {
+        dateColumn: 0,
+        descriptionColumn: 1,
+        amountColumn: 2,
+        dateFormat: "DMY",
+        decimalSeparator: "COMMA",
+      },
+      rows: [
+        {
+          sourceRow: 2,
+          kind: "EXPENSE",
+          description,
+          actualDate: "2026-11-14",
+          amount: 10,
+          errors: [],
+          possibleDuplicate: false,
+        },
+      ],
+    }),
+    { status: 200 },
+  );
+}
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  api.request.mockReset();
+});
+
+describe("FinancialStatementImportDialog", () => {
+  it("maps an Inter-like statement, reviews categories, and confirms only after review", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "a".repeat(64),
+            headers: ["Data Lançamento", "Descrição", "Valor", "Saldo"],
+            mapping: null,
+            rows: [
+              {
+                sourceRow: 7,
+                values: ["14/11/2026", "Mercado", "-10,50", "90,00"],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "a".repeat(64),
+            headers: ["Data Lançamento", "Descrição", "Valor", "Saldo"],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 7,
+                kind: "EXPENSE",
+                description: "Mercado",
+                actualDate: "2026-11-14",
+                amount: 10.5,
+                errors: [],
+                possibleDuplicate: false,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    api.request.mockResolvedValue({
+      importedCount: 1,
+      alreadyImportedCount: 0,
+      possibleDuplicateCount: 0,
+    });
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+
+    const file = new File(["synthetic statement"], "extrato.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      { target: { files: [file] } },
+    );
+    await screen.findByText("Como identificar as colunas?");
+    const previewButton = screen.getByRole("button", { name: "Montar prévia" });
+    expect(previewButton.hasAttribute("disabled")).toBe(false);
+    await user.click(previewButton);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await screen.findByRole("textbox", { name: "Descrição da linha 7" });
+    expect(screen.getByDisplayValue("Mercado")).toBeTruthy();
+    expect(api.request).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Categoria da linha 7" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Alimentação" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    );
+
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-statement-import/confirm",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires explicit acknowledgement before importing possible duplicates", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          hash: "b".repeat(64),
+          headers: [],
+          mapping: {
+            dateColumn: 0,
+            descriptionColumn: 1,
+            amountColumn: 2,
+            dateFormat: "DMY",
+            decimalSeparator: "COMMA",
+          },
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Compra",
+              actualDate: "2026-11-14",
+              amount: 10,
+              errors: [],
+              possibleDuplicate: true,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    const file = new File(["synthetic statement"], "extrato.xlsx");
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      { target: { files: [file] } },
+    );
+    await screen.findByText("Possível duplicidade");
+    await user.click(
+      screen.getByRole("combobox", { name: "Categoria da linha 2" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Alimentação" }),
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Confirmar importação" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await user.click(
+      screen.getByRole("checkbox", { name: /Revisei 1 possível/i }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    );
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-statement-import/confirm",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("applies a category to exact same-description rows and can opt out of remembering", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "c".repeat(64),
+            headers: ["Data", "Descrição", "Valor"],
+            mapping: null,
+            rows: [
+              {
+                sourceRow: 2,
+                values: ["14/11/2026", "Mercado do Bairro", "-10,00"],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "c".repeat(64),
+            headers: ["Data", "Descrição", "Valor"],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "EXPENSE",
+                description: "Mercado do Bairro",
+                actualDate: "2026-11-14",
+                amount: 10,
+                errors: [],
+                categoryId: categories[0].id,
+                categorySource: "saved",
+              },
+              {
+                sourceRow: 3,
+                kind: "EXPENSE",
+                description: " mercado   do bairro ",
+                actualDate: "2026-11-14",
+                amount: 20,
+                errors: [],
+              },
+              {
+                sourceRow: 4,
+                kind: "INCOME",
+                description: "Mercado do Bairro",
+                actualDate: "2026-11-14",
+                amount: 30,
+                errors: [],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    api.request.mockResolvedValue({
+      importedCount: 3,
+      alreadyImportedCount: 0,
+      possibleDuplicateCount: 0,
+    });
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["synthetic"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findByText("Como identificar as colunas?");
+    await user.click(
+      await screen.findByRole("button", { name: "Montar prévia" }),
+    );
+    await screen.findByText("Categoria da sua escolha anterior");
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Categoria da linha 3" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Alimentação" }),
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Categoria da linha 2" })
+        .textContent,
+    ).toContain("Alimentação");
+    expect(
+      screen.getByRole("combobox", { name: "Categoria da linha 3" })
+        .textContent,
+    ).toContain("Alimentação");
+    expect(
+      screen.getByRole("combobox", { name: "Categoria da linha 4" })
+        .textContent,
+    ).toContain("Selecione");
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Categoria da linha 4" }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Salário" }));
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /Lembrar estas categorias nos próximos extratos/,
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    );
+    await waitFor(() =>
+      expect(api.request).toHaveBeenCalledWith(
+        "/api/financial-statement-import/confirm",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"rememberCategories":false'),
+        }),
+      ),
+    );
+  });
+
+  it("ignores an older preview after the user switches files", async () => {
+    const firstResponse = deferred<Response>();
+    const secondResponse = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockImplementationOnce(() => secondResponse.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX");
+    fireEvent.change(input, {
+      target: { files: [new File(["a"], "a.csv", { type: "text/csv" })] },
+    });
+    fireEvent.change(input, {
+      target: { files: [new File(["b"], "b.csv", { type: "text/csv" })] },
+    });
+
+    secondResponse.resolve(mappedPreview("Arquivo B", "b".repeat(64)));
+    await screen.findByDisplayValue("Arquivo B");
+    firstResponse.resolve(mappedPreview("Arquivo A", "a".repeat(64)));
+    await waitFor(() =>
+      expect(screen.queryByDisplayValue("Arquivo A")).toBeNull(),
+    );
+    expect(screen.getByDisplayValue("Arquivo B")).toBeTruthy();
+    rerender(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+  });
+
+  it("ignores a preview that resolves after the dialog closes and reopens", async () => {
+    const pendingResponse = deferred<Response>();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => pendingResponse.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    const props = {
+      onOpenChange: () => {},
+      categories,
+      onImported: () => {},
+    };
+    const { rerender } = render(
+      <FinancialStatementImportDialog open {...props} />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: { files: [new File(["a"], "a.csv", { type: "text/csv" })] },
+      },
+    );
+    rerender(<FinancialStatementImportDialog open={false} {...props} />);
+    rerender(<FinancialStatementImportDialog open {...props} />);
+    pendingResponse.resolve(mappedPreview("Prévia antiga", "a".repeat(64)));
+
+    await waitFor(() =>
+      expect(screen.queryByDisplayValue("Prévia antiga")).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "Descrição da linha 2" }),
+    ).toBeNull();
+  });
+});

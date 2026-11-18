@@ -5,6 +5,7 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
+import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
 import {
   FinancialMonthClose,
   type FinancialMonthClose as FinancialMonthCloseData,
@@ -13,7 +14,14 @@ import { FinancialRecurrencesSheet as RecurrencesSheet } from "@/app/(private)/f
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, CalendarClock, Plus, Tags } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarClock,
+  FileSpreadsheet,
+  Plus,
+  Tags,
+} from "lucide-react";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency } from "@/lib/utils";
@@ -129,6 +137,7 @@ export function FinancialOverview() {
     searchParams.get("gerenciar") === "recorrencias",
   );
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [statementImportOpen, setStatementImportOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingRecurrenceId, setEditingRecurrenceId] = useState<string | null>(
     null,
@@ -203,6 +212,13 @@ export function FinancialOverview() {
           </Button>
           <Button
             variant="outline"
+            disabled={!canEdit}
+            onClick={() => setStatementImportOpen(true)}
+          >
+            <FileSpreadsheet className="mr-2 size-4" />
+            Importar extrato
+          </Button>
+          <Button
             disabled={!canEdit}
             onClick={() => {
               setEditingRecurrenceId(null);
@@ -384,6 +400,12 @@ export function FinancialOverview() {
       <FinancialCategoryManager
         open={categoriesOpen}
         onOpenChange={setCategoriesOpen}
+      />
+      <FinancialStatementImportDialog
+        open={statementImportOpen}
+        onOpenChange={setStatementImportOpen}
+        categories={overview.data?.categories ?? []}
+        onImported={() => void invalidateFinances(client)}
       />
     </div>
   );

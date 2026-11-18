@@ -952,6 +952,74 @@ export const financialEntries = pgTable(
   ],
 );
 
+export const financialStatementImports = pgTable(
+  "financial_statement_imports",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    fileHash: varchar({ length: 64 }).notNull(),
+    importedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_statement_imports_user_hash_uidx").on(
+      table.userId,
+      table.fileHash,
+    ),
+  ],
+);
+
+export const financialStatementImportRows = pgTable(
+  "financial_statement_import_rows",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    importId: uuid()
+      .notNull()
+      .references(() => financialStatementImports.id, { onDelete: "cascade" }),
+    sourceRow: integer().notNull(),
+    entryId: uuid().references(() => financialEntries.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_statement_import_rows_import_row_uidx").on(
+      table.importId,
+      table.sourceRow,
+    ),
+  ],
+);
+
+export const financialStatementCategoryRules = pgTable(
+  "financial_statement_category_rules",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    kind: varchar({ length: 8 }).notNull(),
+    descriptionKey: varchar({ length: 120 }).notNull(),
+    categoryId: uuid()
+      .notNull()
+      .references(() => financialCategories.id, { onDelete: "cascade" }),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_statement_category_rules_user_key_uidx").on(
+      table.userId,
+      table.kind,
+      table.descriptionKey,
+    ),
+    check(
+      "financial_statement_category_rules_kind_check",
+      sql`${table.kind} in ('INCOME', 'EXPENSE')`,
+    ),
+  ],
+);
+
 export const financialMonthlyClosures = pgTable(
   "financial_monthly_closures",
   {
