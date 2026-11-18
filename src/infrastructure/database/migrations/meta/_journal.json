@@ -470,6 +470,13 @@
       "when": 1794936585122,
       "tag": "0066_vengeful_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795036405522,
+      "tag": "0067_wise_mindworm",
+      "breakpoints": true
     }
   ]
 }

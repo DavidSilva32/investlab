@@ -19,6 +19,16 @@ import {
   financialRecurrences,
   financialCategories,
 } from "@/infrastructure/database/schema";
+import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
+
+function currentMonthStartDate(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-01`;
+}
 
 export type FinancialRecurrenceInput = {
   description: string;
@@ -223,11 +233,18 @@ export class FinancialRecurrencesRepository {
 
   async createRecurrence(input: FinancialRecurrenceInput) {
     const userId = requireDataOwnerId();
-    const [recurrence] = await getDatabaseClient()
-      .insert(financialRecurrences)
-      .values({ ...input, userId })
-      .returning();
-    return recurrence;
+    return getDatabaseClient().transaction(async (transaction) => {
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [currentMonthStartDate()],
+      );
+      const [recurrence] = await transaction
+        .insert(financialRecurrences)
+        .values({ ...input, userId })
+        .returning();
+      return recurrence;
+    });
   }
 
   async updateRecurrence(
@@ -235,17 +252,64 @@ export class FinancialRecurrencesRepository {
     input: FinancialRecurrenceInput & { active: boolean },
   ) {
     const userId = requireDataOwnerId();
-    const [recurrence] = await getDatabaseClient()
-      .update(financialRecurrences)
-      .set({ ...input, updatedAt: new Date() })
-      .where(
-        and(
-          eq(financialRecurrences.id, id),
-          eq(financialRecurrences.userId, userId),
-        ),
-      )
-      .returning();
-    return recurrence ?? null;
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select({
+          id: financialRecurrences.id,
+          kind: financialRecurrences.kind,
+        })
+        .from(financialRecurrences)
+        .where(
+          and(
+            eq(financialRecurrences.id, id),
+            eq(financialRecurrences.userId, userId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (!existing) return null;
+
+      const affectedDates: Array<string | null | undefined> = [
+        currentMonthStartDate(),
+      ];
+      if (existing.kind !== input.kind) {
+        const occurrences = await transaction
+          .select({
+            dueDate: recurringFinancialOccurrences.dueDate,
+            actualDate: recurringFinancialOccurrences.actualDate,
+          })
+          .from(recurringFinancialOccurrences)
+          .where(
+            and(
+              eq(recurringFinancialOccurrences.userId, userId),
+              eq(recurringFinancialOccurrences.recurrenceId, id),
+            ),
+          )
+          .for("update");
+        affectedDates.push(
+          ...occurrences.flatMap(({ dueDate, actualDate }) => [
+            dueDate,
+            actualDate,
+          ]),
+        );
+      }
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        affectedDates,
+      );
+      const [recurrence] = await transaction
+        .update(financialRecurrences)
+        .set({ ...input, updatedAt: new Date() })
+        .where(
+          and(
+            eq(financialRecurrences.id, id),
+            eq(financialRecurrences.userId, userId),
+          ),
+        )
+        .returning();
+      return recurrence ?? null;
+    });
   }
 
   async removeRecurrenceSafely(id: string) {
@@ -265,22 +329,41 @@ export class FinancialRecurrencesRepository {
         .limit(1);
       if (!recurrence) return null;
 
-      const [realizedOccurrence] = await transaction
-        .select({ id: recurringFinancialOccurrences.id })
+      const occurrences = await transaction
+        .select({
+          id: recurringFinancialOccurrences.id,
+          dueDate: recurringFinancialOccurrences.dueDate,
+          actualDate: recurringFinancialOccurrences.actualDate,
+          actualAmount: recurringFinancialOccurrences.actualAmount,
+          realizedAt: recurringFinancialOccurrences.realizedAt,
+        })
         .from(recurringFinancialOccurrences)
         .where(
           and(
             eq(recurringFinancialOccurrences.userId, userId),
             eq(recurringFinancialOccurrences.recurrenceId, recurrence.id),
-            or(
-              isNotNull(recurringFinancialOccurrences.actualAmount),
-              isNotNull(recurringFinancialOccurrences.realizedAt),
-            ),
           ),
         )
-        .limit(1);
+        .for("update");
 
-      if (realizedOccurrence) {
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [
+          currentMonthStartDate(),
+          ...occurrences.flatMap(({ dueDate, actualDate }) => [
+            dueDate,
+            actualDate,
+          ]),
+        ],
+      );
+
+      const hasRealizedOccurrence = occurrences.some(
+        (occurrence) =>
+          occurrence.actualAmount !== null || occurrence.realizedAt !== null,
+      );
+
+      if (hasRealizedOccurrence) {
         await transaction
           .update(financialRecurrences)
           .set({ active: false, updatedAt: new Date() })
@@ -314,24 +397,43 @@ export class FinancialRecurrencesRepository {
     realizedAt: Date;
   }) {
     const userId = requireDataOwnerId();
-    const [occurrence] = await getDatabaseClient()
-      .insert(recurringFinancialOccurrences)
-      .values({ ...input, userId })
-      .onConflictDoUpdate({
-        target: [
-          recurringFinancialOccurrences.userId,
-          recurringFinancialOccurrences.recurrenceId,
-          recurringFinancialOccurrences.dueDate,
-        ],
-        set: {
-          actualAmount: input.actualAmount,
-          actualDate: input.actualDate,
-          realizedAt: input.realizedAt,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return occurrence;
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select({ actualDate: recurringFinancialOccurrences.actualDate })
+        .from(recurringFinancialOccurrences)
+        .where(
+          and(
+            eq(recurringFinancialOccurrences.userId, userId),
+            eq(recurringFinancialOccurrences.recurrenceId, input.recurrenceId),
+            eq(recurringFinancialOccurrences.dueDate, input.dueDate),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [existing?.actualDate, input.dueDate, input.actualDate],
+      );
+      const [occurrence] = await transaction
+        .insert(recurringFinancialOccurrences)
+        .values({ ...input, userId })
+        .onConflictDoUpdate({
+          target: [
+            recurringFinancialOccurrences.userId,
+            recurringFinancialOccurrences.recurrenceId,
+            recurringFinancialOccurrences.dueDate,
+          ],
+          set: {
+            actualAmount: input.actualAmount,
+            actualDate: input.actualDate,
+            realizedAt: input.realizedAt,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      return occurrence;
+    });
   }
 }
 

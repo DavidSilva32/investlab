@@ -951,6 +951,63 @@ export const financialEntries = pgTable(
     index("financial_entries_recurrence_idx").on(table.recurrenceId),
   ],
 );
+
+export const financialMonthlyClosures = pgTable(
+  "financial_monthly_closures",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    month: varchar({ length: 7 }).notNull(),
+    status: varchar({ length: 16 }).notNull().default("CLOSED"),
+    currentVersion: integer().notNull().default(1),
+    closedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_monthly_closures_user_month_uidx").on(
+      table.userId,
+      table.month,
+    ),
+    check(
+      "financial_monthly_closures_month_check",
+      sql`${table.month} ~ '^\\d{4}-(0[1-9]|1[0-2])$'`,
+    ),
+    check(
+      "financial_monthly_closures_status_check",
+      sql`${table.status} in ('CLOSED', 'NEEDS_REVIEW')`,
+    ),
+  ],
+);
+
+export const financialMonthlyClosureVersions = pgTable(
+  "financial_monthly_closure_versions",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    closureId: uuid()
+      .notNull()
+      .references(() => financialMonthlyClosures.id, { onDelete: "cascade" }),
+    version: integer().notNull(),
+    totals: jsonb()
+      .$type<{
+        expectedIncome: string | null;
+        realizedIncome: string | null;
+        expectedExpenses: string | null;
+        realizedExpenses: string | null;
+        expectedBalance: string | null;
+        recordedBalance: string | null;
+      }>()
+      .notNull(),
+    closedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("financial_monthly_closure_versions_version_uidx").on(
+      table.closureId,
+      table.version,
+    ),
+  ],
+);
 /* v8 ignore stop */
 /* v8 ignore start -- Drizzle table declarations are declarative schema metadata. */
 export const portfolioObjectives = pgTable(

@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   deleteEntry: vi.fn(),
   getOverview: vi.fn(),
   simulateCapacity: vi.fn(),
+  closeMonth: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
 }));
@@ -28,6 +29,7 @@ vi.mock("@/backend/controllers/financial.controller", () => ({
     deleteEntry: state.deleteEntry,
     getOverview: state.getOverview,
     simulateMonthlyCapacity: state.simulateCapacity,
+    closeMonth: state.closeMonth,
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -53,6 +55,7 @@ import {
 } from "@/app/api/financial-entries/route";
 import { GET as getOverview } from "@/app/api/finance-overview/route";
 import { POST as postCapacity } from "@/app/api/finance-capacity/route";
+import { POST as postClose } from "@/app/api/finance-close/route";
 
 function request(method: string, path: string) {
   return new Request(`http://localhost${path}`, {
@@ -131,6 +134,7 @@ describe("financial API routes", () => {
         "/api/finance-overview?month=2026-10",
         "overview",
       ],
+      [postClose, state.closeMonth, "POST", "/api/finance-close", "close"],
     ] as const;
 
     for (const [handler, controller, method, path, kind] of cases) {
@@ -146,6 +150,8 @@ describe("financial API routes", () => {
         expect(controller).toHaveBeenCalledWith("request-test");
       } else if (kind === "overview") {
         expect(controller).toHaveBeenCalledWith("2026-10", "request-test");
+      } else if (kind === "close") {
+        expect(controller).toHaveBeenCalledWith({}, "request-test");
       } else if (method === "DELETE") {
         expect(controller).toHaveBeenCalledWith(
           new URL(`http://localhost${path}`).searchParams.get("id"),
@@ -222,6 +228,13 @@ describe("financial API routes", () => {
         "/api/finance-overview?month=2026-10",
         "Não foi possível carregar o resumo financeiro.",
       ],
+      [
+        postClose,
+        state.closeMonth,
+        "POST",
+        "/api/finance-close",
+        "Não foi possível fechar o mês financeiro.",
+      ],
     ] as const;
 
     const capacityRequest = new Request(
@@ -230,8 +243,8 @@ describe("financial API routes", () => {
         method: "POST",
         body: JSON.stringify({
           month: "2026-12",
-          incomeReduction: "0.00",
-          expenseIncrease: "0.00",
+          incomeCents: "800000",
+          expenseCents: "600000",
         }),
         headers: { "content-type": "application/json" },
       },
@@ -241,8 +254,8 @@ describe("financial API routes", () => {
     expect(state.simulateCapacity).toHaveBeenCalledWith(
       {
         month: "2026-12",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
+        incomeCents: "800000",
+        expenseCents: "600000",
       },
       "request-test",
     );
@@ -271,8 +284,8 @@ describe("financial API routes", () => {
         method: "POST",
         body: JSON.stringify({
           month: "2026-12",
-          incomeReduction: "0.00",
-          expenseIncrease: "0.00",
+          incomeCents: "800000",
+          expenseCents: "600000",
         }),
         headers: { "content-type": "application/json" },
       }),
@@ -291,8 +304,8 @@ describe("financial API routes", () => {
         method: "POST",
         body: JSON.stringify({
           month: "2026-12",
-          incomeReduction: "0.00",
-          expenseIncrease: "0.00",
+          incomeCents: "800000",
+          expenseCents: "600000",
         }),
         headers: { "content-type": "application/json" },
       }),

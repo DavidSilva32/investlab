@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   deleteEntry: vi.fn(),
   getMonthlyOverview: vi.fn(),
   simulateMonthlyCapacity: vi.fn(),
+  closeMonth: vi.fn(),
   info: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock("@/backend/services/financial.service", () => ({
     deleteEntry: state.deleteEntry,
     getMonthlyOverview: state.getMonthlyOverview,
     simulateMonthlyCapacity: state.simulateMonthlyCapacity,
+    closeMonth: state.closeMonth,
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -134,6 +136,40 @@ describe("FinancialController", () => {
         requestId: "request-j",
         month: "2026-12",
         status: "positive",
+      }),
+    );
+
+    const close = {
+      month: "2026-10",
+      close: {
+        status: "closed",
+        closedAt: "2026-11-01T12:00:00.000Z",
+        totals: {
+          expectedIncome: "1000.00",
+          realizedIncome: "950.00",
+          expectedExpenses: "500.00",
+          realizedExpenses: "525.00",
+          expectedBalance: "500.00",
+          recordedBalance: "425.00",
+        },
+      },
+    };
+    state.closeMonth.mockResolvedValue(close);
+    const closed = await controller.closeMonth(
+      { month: "2026-10" },
+      "request-k",
+    );
+    expect(await closed.json()).toMatchObject({
+      ...close,
+      message: "Mês fechado.",
+    });
+    expect(state.closeMonth).toHaveBeenCalledWith({ month: "2026-10" });
+    expect(state.info).toHaveBeenCalledWith(
+      "financial_month_closed",
+      expect.objectContaining({
+        requestId: "request-k",
+        month: "2026-10",
+        status: "closed",
       }),
     );
   });

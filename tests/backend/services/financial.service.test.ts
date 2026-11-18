@@ -16,6 +16,8 @@ const repositories = vi.hoisted(() => ({
   listRecurrences: vi.fn(),
   findRecurrence: vi.fn(),
   listOccurrencesForFinancialPeriod: vi.fn(),
+  getCurrentClose: vi.fn(),
+  saveMonthClose: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/financial.repository", () => ({
@@ -41,6 +43,13 @@ vi.mock("@/backend/repositories/financial-recurrences.repository", () => ({
     findRecurrence: repositories.findRecurrence,
     listOccurrencesForFinancialPeriod:
       repositories.listOccurrencesForFinancialPeriod,
+  },
+}));
+
+vi.mock("@/backend/repositories/financial-month-close.repository", () => ({
+  financialMonthCloseRepository: {
+    getCurrent: repositories.getCurrentClose,
+    closeMonth: repositories.saveMonthClose,
   },
 }));
 
@@ -202,6 +211,14 @@ describe("FinancialService", () => {
     repositories.listRecurrences.mockResolvedValue([]);
     repositories.findRecurrence.mockResolvedValue(recurringExpense());
     repositories.listOccurrencesForFinancialPeriod.mockResolvedValue([]);
+    repositories.getCurrentClose.mockResolvedValue(null);
+    repositories.saveMonthClose.mockImplementation(
+      async (_month, loadTotals) => ({
+        status: "closed",
+        closedAt: "2026-11-18T12:00:00.000Z",
+        totals: await loadTotals(),
+      }),
+    );
   });
 
   it("lists categories and validates the month when listing entries", async () => {
@@ -892,14 +909,16 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "125.25",
-        expenseIncrease: "300.10",
+        incomeCents: "787475",
+        expenseCents: "630010",
       }),
     ).resolves.toEqual({
       month: "2026-12",
+      baselineIncomeCents: "800000",
+      baselineExpenseCents: "600000",
       baseBalanceCents: "200000",
-      incomeReductionCents: "12525",
-      expenseIncreaseCents: "30010",
+      incomeCents: "787475",
+      expenseCents: "630010",
       simulatedBalanceCents: "157465",
       status: "positive",
       completeness: "recorded_only",
@@ -916,11 +935,11 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
       }),
     ).resolves.toMatchObject({
       month: "2026-12",
+      baselineIncomeCents: null,
+      baselineExpenseCents: null,
       baseBalanceCents: null,
       simulatedBalanceCents: null,
       status: "unavailable",
@@ -951,8 +970,8 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
+        incomeCents: "10000",
+        expenseCents: "10000",
       }),
     ).resolves.toMatchObject({
       simulatedBalanceCents: "0",
@@ -962,8 +981,8 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "1.00",
-        expenseIncrease: "0.00",
+        incomeCents: "9900",
+        expenseCents: "10000",
       }),
     ).resolves.toMatchObject({
       simulatedBalanceCents: "-100",
@@ -995,8 +1014,8 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
+        incomeCents: "10025",
+        expenseCents: "20075",
       }),
     ).resolves.toMatchObject({
       baseBalanceCents: "-10050",
@@ -1037,13 +1056,13 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-11",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
       }),
     ).resolves.toMatchObject({
+      baselineIncomeCents: "500000",
+      baselineExpenseCents: "312550",
       baseBalanceCents: "187450",
-      simulatedBalanceCents: "187450",
-      status: "positive",
+      simulatedBalanceCents: null,
+      status: "unavailable",
     });
   });
 
@@ -1053,22 +1072,26 @@ describe("FinancialService", () => {
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "1.001",
-        expenseIncrease: "0.00",
+        incomeCents: "10010x",
+        expenseCents: "0",
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-12",
-        incomeReduction: "invalid",
-        expenseIncrease: "0.00",
+        incomeCents: "100",
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      service.simulateMonthlyCapacity({
+        month: "2026-12",
+        incomeCents: "100000000000000",
+        expenseCents: "0",
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
     await expect(
       service.simulateMonthlyCapacity({
         month: "2026-10",
-        incomeReduction: "0.00",
-        expenseIncrease: "0.00",
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
@@ -1191,6 +1214,57 @@ describe("FinancialService", () => {
         recordedBalance: "-1.00",
       },
     });
+  });
+
+  it("returns the saved close state alongside the live monthly overview", async () => {
+    const savedClose = {
+      status: "needs_review",
+      closedAt: "2026-11-01T12:00:00.000Z",
+      totals: {
+        expectedIncome: "100.00",
+        realizedIncome: "90.00",
+        expectedExpenses: null,
+        realizedExpenses: null,
+        expectedBalance: null,
+        recordedBalance: null,
+      },
+    };
+    repositories.getCurrentClose.mockResolvedValue(savedClose);
+    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
+      close: savedClose,
+      summary: { completeness: "no_data" },
+    });
+    expect(repositories.getCurrentClose).toHaveBeenCalledWith("2026-10");
+  });
+
+  it("closes an elapsed month from its current summary and rejects future months", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    const result = await service.closeMonth({ month: "2026-10" });
+    expect(result).toMatchObject({
+      month: "2026-10",
+      close: {
+        status: "closed",
+        totals: {
+          expectedIncome: null,
+          realizedIncome: null,
+          expectedExpenses: null,
+          realizedExpenses: null,
+          expectedBalance: null,
+          recordedBalance: null,
+        },
+      },
+    });
+    expect(repositories.saveMonthClose).toHaveBeenCalledWith(
+      "2026-10",
+      expect.any(Function),
+    );
+    await expect(
+      service.closeMonth({ month: "2026-12" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(
+      service.closeMonth({ month: "2026-13" }),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("validates malformed, out-of-range, and impossible reporting months", async () => {

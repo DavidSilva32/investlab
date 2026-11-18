@@ -96,6 +96,17 @@ export class FinancialController {
     return Response.json(data);
   }
 
+  async closeMonth(body: unknown, requestId: string) {
+    const data = await financialService.closeMonth(body);
+    logger.info("financial_month_closed", {
+      requestId,
+      month: data.month,
+      status: data.close.status,
+      closedAt: data.close.closedAt,
+    });
+    return Response.json({ ...data, message: "Mês fechado." });
+  }
+
   async simulateMonthlyCapacity(body: unknown, requestId: string) {
     const data = await financialService.simulateMonthlyCapacity(body);
     logger.info("financial_capacity_simulated", {

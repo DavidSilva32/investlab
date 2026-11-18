@@ -223,12 +223,45 @@ describe("FinancialRepository", () => {
 
   it("creates and updates financial entries as owner-scoped writes", async () => {
     const row = { id: "entry" };
-    const returning = vi.fn().mockResolvedValue([row]);
-    const values = vi.fn().mockReturnValue({ returning });
-    database.insert.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_entries");
-      return { values };
+    const values = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([row]),
     });
+    const selected = vi
+      .fn()
+      .mockResolvedValue([{ expectedDate: "2026-10-10", actualDate: null }]);
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([row]),
+      then: (resolve: (value: undefined) => unknown) =>
+        Promise.resolve(undefined).then(resolve),
+    });
+    const set = vi.fn().mockReturnValue({ where });
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({ limit: selected })),
+          })),
+        })),
+      })),
+      insert: vi.fn((table) => {
+        expect(getTableName(table)).toBe("financial_entries");
+        return { values };
+      }),
+      update: vi.fn((table) => {
+        if (getTableName(table) === "financial_monthly_closures") {
+          return {
+            set: vi.fn(() => ({
+              where: vi.fn().mockResolvedValue(undefined),
+            })),
+          };
+        }
+        return { set };
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
     const input = {
       kind: "EXPENSE",
       description: "Luz",
@@ -242,13 +275,6 @@ describe("FinancialRepository", () => {
       runWithDataOwner("owner-f", () => repository.createEntry(input)),
     ).resolves.toEqual(row);
     expect(values).toHaveBeenCalledWith({ ...input, userId: "owner-f" });
-
-    const where = vi.fn().mockReturnValue({ returning });
-    const set = vi.fn().mockReturnValue({ where });
-    database.update.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_entries");
-      return { set };
-    });
     await expect(
       runWithDataOwner("owner-f", () =>
         repository.updateEntry("entry-id", input),
@@ -257,7 +283,7 @@ describe("FinancialRepository", () => {
     expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
       "owner-f",
     );
-    returning.mockResolvedValueOnce([]);
+    selected.mockResolvedValueOnce([]);
     await expect(
       runWithDataOwner("owner-f", () =>
         repository.updateEntry("missing", input),
@@ -293,6 +319,20 @@ describe("FinancialRepository", () => {
       .mockResolvedValueOnce([{ id: recurrenceId }])
       .mockResolvedValueOnce([{ id: "entry-id", recurrenceId }]);
     const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({
+              limit: vi
+                .fn()
+                .mockResolvedValue([
+                  { expectedDate: "2026-10-10", actualDate: null },
+                ]),
+            })),
+          })),
+        })),
+      })),
       insert: vi.fn((table) => ({
         values: vi.fn((values) => {
           insertedValues.push({ table: getTableName(table), values });
@@ -301,6 +341,9 @@ describe("FinancialRepository", () => {
       })),
       update: vi.fn((table) => ({
         set: vi.fn((values) => {
+          if (getTableName(table) === "financial_monthly_closures") {
+            return { where: vi.fn().mockResolvedValue(undefined) };
+          }
           updatedValues.push({ table: getTableName(table), values });
           return { where: vi.fn(() => ({ returning })) };
         }),
@@ -383,17 +426,38 @@ describe("FinancialRepository", () => {
   it("deletes only an entry belonging to the active owner", async () => {
     const returning = vi.fn().mockResolvedValue([{ id: "entry-id" }]);
     const where = vi.fn().mockReturnValue({ returning });
-    database.delete.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_entries");
-      return { where };
-    });
+    const selected = vi
+      .fn()
+      .mockResolvedValue([{ expectedDate: "2026-10-10", actualDate: null }]);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({ limit: selected })),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+      delete: vi.fn((table) => {
+        expect(getTableName(table)).toBe("financial_entries");
+        return { where };
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
     await expect(
       runWithDataOwner("owner-g", () => repository.deleteEntry("entry-id")),
     ).resolves.toEqual({ id: "entry-id" });
     expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
       "owner-g",
     );
-    returning.mockResolvedValueOnce([]);
+    selected.mockResolvedValueOnce([]);
     await expect(
       runWithDataOwner("owner-g", () => repository.deleteEntry("missing")),
     ).resolves.toBeNull();

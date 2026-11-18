@@ -144,7 +144,7 @@ describe("FinancialOverview", () => {
     ).toBe(false);
   });
 
-  it("opens a central new-entry dialog with category and paired expected/actual dates", async () => {
+  it("opens a central new-entry dialog in realized mode and offers optional planning", async () => {
     const user = userEvent.setup();
     renderFinance();
     await screen.findByText(/Ainda não há registros neste mês/);
@@ -155,8 +155,15 @@ describe("FinancialOverview", () => {
       await screen.findByRole("dialog", { name: "Novo lançamento" }),
     ).toBeTruthy();
     expect(screen.getByText("Categoria")).toBeTruthy();
-    expect(screen.getByText("Previsto")).toBeTruthy();
-    expect(screen.getByText("Realizado")).toBeTruthy();
+    expect(screen.getByLabelText("Situação do lançamento")).toBeTruthy();
+    expect(screen.queryByLabelText("Data prevista")).toBeNull();
+    expect(screen.getByLabelText("Data realizada")).toBeTruthy();
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: "Registrar previsto e realizado" }),
+    );
     expect(screen.getByLabelText("Data prevista")).toBeTruthy();
     expect(screen.getByLabelText("Data realizada")).toBeTruthy();
   });
@@ -339,6 +346,10 @@ describe("FinancialOverview", () => {
     await user.type(screen.getByLabelText("Descrição"), "Aluguel");
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
     await user.click(await screen.findByRole("option", { name: "Moradia" }));
+    await user.click(
+      screen.getByRole("combobox", { name: "Situação do lançamento" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Quero planejar" }));
     await user.type(
       screen.getByLabelText("Valor (R$)", { selector: "#expected-amount" }),
       "500000",

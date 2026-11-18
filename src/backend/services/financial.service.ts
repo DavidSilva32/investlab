@@ -7,6 +7,10 @@ import {
 } from "@/backend/repositories/financial.repository";
 import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
 import {
+  financialMonthCloseRepository,
+  type FinancialCloseTotals,
+} from "@/backend/repositories/financial-month-close.repository";
+import {
   financialCategoryCreateSchema,
   financialCategoryUpdateSchema,
   financialEntryCreateSchema,
@@ -107,15 +111,27 @@ function formatCents(value: bigint) {
   return `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
 }
 
-const capacityAmountSchema = z
-  .string()
-  .regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/);
+const capacityCentsSchema = z.string().regex(/^(?:0|[1-9]\d{0,13})$/);
 const capacitySimulationSchema = z
   .object({
     month: z.string().regex(/^\d{4}-\d{2}$/),
-    incomeReduction: capacityAmountSchema,
-    expenseIncrease: capacityAmountSchema,
+    incomeCents: capacityCentsSchema.optional(),
+    expenseCents: capacityCentsSchema.optional(),
   })
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      (value.incomeCents === undefined) !==
+      (value.expenseCents === undefined)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe renda e despesas juntas.",
+      });
+    }
+  });
+const financialMonthCloseSchema = z
+  .object({ month: z.string().regex(/^\d{4}-\d{2}$/) })
   .strict();
 
 function sumAmounts(values: Array<string | null | undefined>) {
@@ -401,7 +417,7 @@ export class FinancialService {
     const parsed = capacitySimulationSchema.safeParse(body);
     if (!parsed.success) {
       throw new ApplicationError(
-        "Informe um mês atual ou futuro e ajustes válidos em reais.",
+        "Informe um mês atual ou futuro e valores válidos de renda e despesas.",
         400,
       );
     }
@@ -415,49 +431,60 @@ export class FinancialService {
     }
 
     const overview = await this.getMonthlyOverview(month);
-    const baseBalance = overview.summary.expectedBalance;
-    const incomeReductionCents = parseCents(parsed.data.incomeReduction);
-    const expenseIncreaseCents = parseCents(parsed.data.expenseIncrease);
     const currentRange = monthRange(month);
-    const actualOnlyAdjustmentCents =
+    const actualOnlyAmounts =
       month === currentFinancialMonth()
-        ? overview.entries.reduce((balance, entry) => {
-            if (
-              entry.expectedAmount !== null ||
-              entry.actualAmount === null ||
-              !isWithin(
-                entry.actualDate,
-                currentRange.startDate,
-                currentRange.endDate,
-              )
-            ) {
-              return balance;
-            }
-            const actualCents = parseCents(entry.actualAmount);
-            return (
-              balance + (entry.kind === "INCOME" ? actualCents : -actualCents)
-            );
-          }, 0n)
-        : 0n;
+        ? overview.entries.reduce(
+            (amounts, entry) => {
+              if (
+                (entry.kind !== "INCOME" && entry.kind !== "EXPENSE") ||
+                entry.expectedAmount !== null ||
+                entry.actualAmount === null ||
+                !isWithin(
+                  entry.actualDate,
+                  currentRange.startDate,
+                  currentRange.endDate,
+                )
+              ) {
+                return amounts;
+              }
+              const actualCents = parseCents(entry.actualAmount);
+              amounts[entry.kind] += actualCents;
+              return amounts;
+            },
+            { INCOME: 0n, EXPENSE: 0n },
+          )
+        : { INCOME: 0n, EXPENSE: 0n };
+    const addActualOnly = (expected: string | null, actualOnly: bigint) =>
+      expected === null ? null : (parseCents(expected) + actualOnly).toString();
+    const baselineIncomeCents = addActualOnly(
+      overview.summary.expectedIncome,
+      actualOnlyAmounts.INCOME,
+    );
+    const baselineExpenseCents = addActualOnly(
+      overview.summary.expectedExpenses,
+      actualOnlyAmounts.EXPENSE,
+    );
     const baseBalanceInCents =
-      baseBalance === null
-        ? null
-        : parseCents(baseBalance) + actualOnlyAdjustmentCents;
-    const simulatedBalanceCents =
-      baseBalanceInCents === null
+      baselineIncomeCents === null || baselineExpenseCents === null
         ? null
         : (
-            baseBalanceInCents -
-            incomeReductionCents -
-            expenseIncreaseCents
+            BigInt(baselineIncomeCents) - BigInt(baselineExpenseCents)
           ).toString();
+    const incomeCents = parsed.data.incomeCents ?? null;
+    const expenseCents = parsed.data.expenseCents ?? null;
+    const simulatedBalanceCents =
+      incomeCents === null || expenseCents === null
+        ? null
+        : (BigInt(incomeCents) - BigInt(expenseCents)).toString();
 
     return {
       month,
-      baseBalanceCents:
-        baseBalanceInCents === null ? null : baseBalanceInCents.toString(),
-      incomeReductionCents: incomeReductionCents.toString(),
-      expenseIncreaseCents: expenseIncreaseCents.toString(),
+      baselineIncomeCents,
+      baselineExpenseCents,
+      baseBalanceCents: baseBalanceInCents,
+      incomeCents,
+      expenseCents,
       simulatedBalanceCents,
       status:
         simulatedBalanceCents === null
@@ -469,7 +496,8 @@ export class FinancialService {
               : "zero",
       completeness: overview.summary.completeness,
       canSimulateStrategy:
-        isProjectionMonth(month) &&
+        incomeCents !== null &&
+        expenseCents !== null &&
         simulatedBalanceCents !== null &&
         BigInt(simulatedBalanceCents) > 0n,
     } as const;
@@ -478,7 +506,7 @@ export class FinancialService {
   async getMonthlyOverview(monthValue: string | null | undefined) {
     const month = parseMonth(monthValue);
     const historyEndDate = month.endDate;
-    const [entries, recurrences, savedOccurrences, categories] =
+    const [entries, recurrences, savedOccurrences, categories, close] =
       await Promise.all([
         financialRepository.listEntries(month.historyStartDate, historyEndDate),
         financialRecurrencesRepository.listRecurrences(),
@@ -487,6 +515,7 @@ export class FinancialService {
           historyEndDate,
         ),
         financialRepository.listCategories(),
+        financialMonthCloseRepository.getCurrent(monthValue!),
       ]);
     const currentRange = { startDate: month.startDate, endDate: month.endDate };
     const occurrenceByKey = new Map(
@@ -750,6 +779,7 @@ export class FinancialService {
           ? ("recorded_only" as const)
           : ("no_data" as const),
       },
+      close,
       entries: currentEntries,
       recurringOccurrences: [...monthlyOccurrences.values()].sort(
         (left, right) => left.dueDate.localeCompare(right.dueDate),
@@ -762,6 +792,29 @@ export class FinancialService {
       },
       categories,
     };
+  }
+
+  async closeMonth(body: unknown) {
+    const parsed = financialMonthCloseSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApplicationError("Informe um mês válido para fechar.", 400);
+    }
+    parseMonth(parsed.data.month);
+    const currentMonth = currentFinancialMonth();
+    if (parsed.data.month > currentMonth) {
+      throw new ApplicationError(
+        "Só é possível fechar um mês atual ou anterior.",
+        400,
+      );
+    }
+    const close = await financialMonthCloseRepository.closeMonth(
+      parsed.data.month,
+      async (): Promise<FinancialCloseTotals> => {
+        const overview = await this.getMonthlyOverview(parsed.data.month);
+        return overview.summary;
+      },
+    );
+    return { month: parsed.data.month, close };
   }
 }
 

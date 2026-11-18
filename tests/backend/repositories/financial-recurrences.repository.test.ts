@@ -3,6 +3,15 @@ import { getTableName } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 
+function currentMonthKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
+}
+
 const database = vi.hoisted(() => ({
   select: vi.fn(),
   selectDistinctOn: vi.fn(),
@@ -323,10 +332,18 @@ describe("FinancialRecurrencesRepository", () => {
     const row = { id: "created" };
     const returning = vi.fn().mockResolvedValue([row]);
     const values = vi.fn().mockReturnValue({ returning });
-    database.insert.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_recurrences");
-      return { values };
-    });
+    const closeWhere = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: closeWhere })) })),
+      insert: vi.fn((table) => {
+        expect(getTableName(table)).toBe("financial_recurrences");
+        return { values };
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
 
     const input = {
       description: "Internet",
@@ -341,6 +358,11 @@ describe("FinancialRecurrencesRepository", () => {
       runWithDataOwner("owner-d", () => repository.createRecurrence(input)),
     ).resolves.toEqual(row);
     expect(values).toHaveBeenCalledWith({ ...input, userId: "owner-d" });
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(transaction.update).toHaveBeenCalledOnce();
+    expect(
+      new PgDialect().sqlToQuery(closeWhere.mock.calls[0][0]).params,
+    ).toContain(currentMonthKey());
   });
 
   it("updates an owner expense and returns null when no row matches", async () => {
@@ -351,10 +373,32 @@ describe("FinancialRecurrencesRepository", () => {
       .mockResolvedValueOnce([]);
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
-    database.update.mockImplementation((table) => {
+    const closeWhere = vi.fn().mockResolvedValue(undefined);
+    const update = vi.fn((table) => {
+      if (getTableName(table) === "financial_monthly_closures") {
+        return { set: vi.fn(() => ({ where: closeWhere })) };
+      }
       expect(getTableName(table)).toBe("financial_recurrences");
       return { set };
     });
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({
+              limit: vi
+                .fn()
+                .mockResolvedValue([{ id: "expense-id", kind: "EXPENSE" }]),
+            })),
+          })),
+        })),
+      })),
+      update,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
     const input = {
       description: "Internet",
       amount: "100.00",
@@ -371,6 +415,10 @@ describe("FinancialRecurrencesRepository", () => {
         repository.updateRecurrence("expense-id", input),
       ),
     ).resolves.toEqual(rows[0]);
+    expect(transaction.execute).toHaveBeenCalledOnce();
+    expect(
+      new PgDialect().sqlToQuery(closeWhere.mock.calls[0][0]).params,
+    ).toContain(currentMonthKey());
     expect(set).toHaveBeenLastCalledWith(
       expect.objectContaining({ ...input, updatedAt: expect.any(Date) }),
     );
@@ -380,6 +428,81 @@ describe("FinancialRecurrencesRepository", () => {
         repository.updateRecurrence("missing-id", input),
       ),
     ).resolves.toBeNull();
+    expect(transaction.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks closed occurrence months when a recurrence changes its income or expense kind", async () => {
+    const closeWhere = vi.fn().mockResolvedValue(undefined);
+    let selectCount = 0;
+    const select = vi.fn(() => {
+      const currentSelect = selectCount++;
+      return {
+        from: vi.fn(() => ({
+          where: vi.fn(() =>
+            currentSelect === 0
+              ? {
+                  for: vi.fn(() => ({
+                    limit: vi
+                      .fn()
+                      .mockResolvedValue([
+                        { id: "recurrence-id", kind: "EXPENSE" },
+                      ]),
+                  })),
+                }
+              : {
+                  for: vi
+                    .fn()
+                    .mockResolvedValue([
+                      { dueDate: "2026-10-10", actualDate: "2026-10-12" },
+                    ]),
+                },
+          ),
+        })),
+      };
+    });
+    const update = vi.fn((table) => {
+      if (getTableName(table) === "financial_monthly_closures") {
+        return { set: vi.fn(() => ({ where: closeWhere })) };
+      }
+      return {
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            returning: vi.fn().mockResolvedValue([{ id: "recurrence-id" }]),
+          })),
+        })),
+      };
+    });
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select,
+      update,
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-kind", () =>
+        repository.updateRecurrence("recurrence-id", {
+          description: "Entrada",
+          amount: "100.00",
+          frequency: "MONTHLY",
+          firstDueDate: "2026-10-10",
+          essential: false,
+          kind: "INCOME",
+          categoryId: null,
+          active: true,
+        }),
+      ),
+    ).resolves.toMatchObject({ id: "recurrence-id" });
+
+    const markedMonths = new PgDialect().sqlToQuery(
+      closeWhere.mock.calls[0][0],
+    ).params;
+    expect(markedMonths).toContain("2026-10");
+    expect(markedMonths).toContain(currentMonthKey());
+    expect(transaction.execute).toHaveBeenCalledTimes(2);
+    expect(transaction.update).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -400,10 +523,29 @@ describe("FinancialRecurrencesRepository", () => {
     const forUpdate = vi.fn().mockReturnValue({ limit: firstLimit });
     const firstWhere = vi.fn().mockReturnValue({ for: forUpdate });
     const firstFrom = vi.fn().mockReturnValue({ where: firstWhere });
-    const secondLimit = vi
-      .fn()
-      .mockResolvedValue(realized ? [{ id: "occurrence" }] : []);
-    const secondWhere = vi.fn().mockReturnValue({ limit: secondLimit });
+    const secondWhere = vi.fn().mockReturnValue({
+      for: vi.fn().mockResolvedValue(
+        realized
+          ? [
+              {
+                id: "occurrence",
+                dueDate: "2026-10-10",
+                actualDate: "2026-10-12",
+                actualAmount: "100.00",
+                realizedAt: new Date("2026-10-12T12:00:00Z"),
+              },
+            ]
+          : [
+              {
+                id: "planned-occurrence",
+                dueDate: "2026-10-10",
+                actualDate: null,
+                actualAmount: null,
+                realizedAt: null,
+              },
+            ],
+      ),
+    });
     const secondFrom = vi.fn().mockReturnValue({ where: secondWhere });
     const transactionSelect = vi
       .fn()
@@ -412,11 +554,18 @@ describe("FinancialRecurrencesRepository", () => {
     const updateWhere = vi.fn().mockResolvedValue(undefined);
     const updateSet = vi.fn().mockReturnValue({ where: updateWhere });
     const transactionUpdate = vi.fn().mockReturnValue({ set: updateSet });
+    const closeWhere = vi.fn().mockResolvedValue(undefined);
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
     const transactionDelete = vi.fn().mockReturnValue({ where: deleteWhere });
     const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: transactionSelect,
-      update: transactionUpdate,
+      update: vi.fn((table) => {
+        if (getTableName(table) === "financial_monthly_closures") {
+          return { set: vi.fn(() => ({ where: closeWhere })) };
+        }
+        return transactionUpdate(table);
+      }),
       delete: transactionDelete,
     };
     database.transaction.mockImplementation(async (callback) =>
@@ -434,6 +583,13 @@ describe("FinancialRecurrencesRepository", () => {
     expectOwnerScopedWhere(secondWhere, "owner-e");
     expect(transactionDelete).toHaveBeenCalledTimes(realized ? 0 : 1);
     expect(transactionUpdate).toHaveBeenCalledTimes(realized ? 1 : 0);
+    expect(transaction.execute).toHaveBeenCalledTimes(2);
+    expect(transaction.update).toHaveBeenCalledTimes(realized ? 2 : 1);
+    const markedMonths = new PgDialect().sqlToQuery(
+      closeWhere.mock.calls[0][0],
+    ).params;
+    expect(markedMonths).toContain(currentMonthKey());
+    expect(markedMonths).toContain("2026-10");
     if (realized) {
       expect(updateSet).toHaveBeenCalledWith({
         active: false,
@@ -466,14 +622,35 @@ describe("FinancialRecurrencesRepository", () => {
     const returning = vi.fn().mockResolvedValue([row]);
     const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
     const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    database.insert.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("recurring_financial_occurrences");
-      return { values };
-    });
+    const closeWhere = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([{ actualDate: "2026-10-31" }]),
+            })),
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: closeWhere,
+        })),
+      })),
+      insert: vi.fn((table) => {
+        expect(getTableName(table)).toBe("recurring_financial_occurrences");
+        return { values };
+      }),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
     const input = {
       recurrenceId: "expense-id",
-      dueDate: "2026-10-10",
-      actualDate: "2026-10-12",
+      dueDate: "2026-09-30",
+      actualDate: "2026-11-01",
       expectedAmount: "100.00",
       actualAmount: "105.00",
       realizedAt: new Date("2026-10-10T12:00:00.000Z"),
@@ -483,6 +660,13 @@ describe("FinancialRecurrencesRepository", () => {
       runWithDataOwner("owner-f", () => repository.realizeOccurrence(input)),
     ).resolves.toEqual(row);
     expect(values).toHaveBeenCalledWith({ ...input, userId: "owner-f" });
+    const markedMonths = new PgDialect().sqlToQuery(
+      closeWhere.mock.calls[0][0],
+    ).params;
+    expect(markedMonths).toContain("2026-09");
+    expect(markedMonths).toContain("2026-10");
+    expect(markedMonths).toContain("2026-11");
+    expect(transaction.execute).toHaveBeenCalledTimes(3);
     expect(onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         set: expect.objectContaining({

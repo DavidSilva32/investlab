@@ -7,6 +7,7 @@ import {
   financialEntries,
   financialRecurrences,
 } from "@/infrastructure/database/schema";
+import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
 
 export type FinancialCategoryRecord = {
   id: string;
@@ -215,23 +216,55 @@ export class FinancialRepository {
 
   async createEntry(input: FinancialEntryInput) {
     const userId = requireDataOwnerId();
-    const [entry] = await getDatabaseClient()
-      .insert(financialEntries)
-      .values({ ...input, userId })
-      .returning();
-    return entry;
+    return getDatabaseClient().transaction(async (transaction) => {
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [input.expectedDate, input.actualDate],
+      );
+      const [entry] = await transaction
+        .insert(financialEntries)
+        .values({ ...input, userId })
+        .returning();
+      return entry;
+    });
   }
 
   async updateEntry(id: string, input: FinancialEntryInput) {
     const userId = requireDataOwnerId();
-    const [entry] = await getDatabaseClient()
-      .update(financialEntries)
-      .set({ ...input, updatedAt: new Date() })
-      .where(
-        and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
-      )
-      .returning();
-    return entry ?? null;
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select({
+          expectedDate: financialEntries.expectedDate,
+          actualDate: financialEntries.actualDate,
+        })
+        .from(financialEntries)
+        .where(
+          and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
+        )
+        .for("update")
+        .limit(1);
+      if (!existing) return null;
+      const dates = [
+        existing.expectedDate,
+        existing.actualDate,
+        input.expectedDate,
+        input.actualDate,
+      ];
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        dates,
+      );
+      const [entry] = await transaction
+        .update(financialEntries)
+        .set({ ...input, updatedAt: new Date() })
+        .where(
+          and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
+        )
+        .returning();
+      return entry ?? null;
+    });
   }
 
   async saveEntryWithRecurrence(
@@ -242,6 +275,25 @@ export class FinancialRepository {
     const userId = requireDataOwnerId();
     const database = getDatabaseClient();
     return database.transaction(async (transaction) => {
+      const [existing] = id
+        ? await transaction
+            .select({
+              expectedDate: financialEntries.expectedDate,
+              actualDate: financialEntries.actualDate,
+            })
+            .from(financialEntries)
+            .where(
+              and(
+                eq(financialEntries.id, id),
+                eq(financialEntries.userId, userId),
+              ),
+            )
+            .for("update")
+            .limit(1)
+        : [];
+      if (id && !existing) {
+        throw new Error("The linked financial entry could not be found.");
+      }
       const [createdRecurrence] = await transaction
         .insert(financialRecurrences)
         .values({ ...recurrence, userId })
@@ -272,19 +324,48 @@ export class FinancialRepository {
       if (!entry) {
         throw new Error("The linked financial entry could not be saved.");
       }
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [
+          existing?.expectedDate,
+          existing?.actualDate,
+          input.expectedDate,
+          input.actualDate,
+        ],
+      );
       return entry;
     });
   }
 
   async deleteEntry(id: string) {
     const userId = requireDataOwnerId();
-    const [entry] = await getDatabaseClient()
-      .delete(financialEntries)
-      .where(
-        and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
-      )
-      .returning({ id: financialEntries.id });
-    return entry ?? null;
+    return getDatabaseClient().transaction(async (transaction) => {
+      const [existing] = await transaction
+        .select({
+          expectedDate: financialEntries.expectedDate,
+          actualDate: financialEntries.actualDate,
+        })
+        .from(financialEntries)
+        .where(
+          and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
+        )
+        .for("update")
+        .limit(1);
+      if (!existing) return null;
+      await financialMonthCloseRepository.markDatesForReview(
+        transaction,
+        userId,
+        [existing.expectedDate, existing.actualDate],
+      );
+      const [entry] = await transaction
+        .delete(financialEntries)
+        .where(
+          and(eq(financialEntries.id, id), eq(financialEntries.userId, userId)),
+        )
+        .returning({ id: financialEntries.id });
+      return entry ?? null;
+    });
   }
 }
 

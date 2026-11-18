@@ -586,6 +586,7 @@ describe("withApiRequestLogging", () => {
   it.each([
     ["POST", "/api/proventos"],
     ["POST", "/api/finance-overview"],
+    ["POST", "/api/finance-close"],
     ["POST", "/api/financial-entries"],
     ["PATCH", "/api/financial-entries"],
     ["DELETE", "/api/financial-entries"],

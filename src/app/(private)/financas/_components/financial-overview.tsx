@@ -5,6 +5,10 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
+import {
+  FinancialMonthClose,
+  type FinancialMonthClose as FinancialMonthCloseData,
+} from "@/app/(private)/financas/_components/financial-month-close";
 import { FinancialRecurrencesSheet as RecurrencesSheet } from "@/app/(private)/financas/_components/financial-recurrences-sheet";
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -82,6 +86,7 @@ type Overview = {
     completeness: "recorded_only";
     explanation: string;
   };
+  close: FinancialMonthCloseData | null;
   categories: Category[];
 };
 type RecurrenceOverview = {
@@ -292,6 +297,12 @@ export function FinancialOverview() {
               </Card>
             ))}
           </div>
+          <FinancialMonthClose
+            month={month}
+            close={data?.close ?? null}
+            readOnly={!canEdit}
+            onClosed={() => void invalidateFinances(client)}
+          />
           {data?.summary.completeness === "no_data" && (
             <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
               Ainda não há registros neste mês. Cadastre uma receita, despesa ou
