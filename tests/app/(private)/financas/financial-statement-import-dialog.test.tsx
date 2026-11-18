@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +39,9 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+
+const firstMatch = <Element extends HTMLElement>(matches: Element[]) =>
+  matches[0];
 
 function mappedPreview(description: string, hash: string) {
   return new Response(
@@ -148,12 +152,14 @@ describe("FinancialStatementImportDialog", () => {
     expect(previewButton.hasAttribute("disabled")).toBe(false);
     await user.click(previewButton);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    await screen.findByRole("textbox", { name: "Descrição da linha 7" });
-    expect(screen.getByDisplayValue("Mercado")).toBeTruthy();
+    await screen.findAllByRole("textbox", { name: "Descrição da linha 7" });
+    expect(firstMatch(screen.getAllByDisplayValue("Mercado"))).toBeTruthy();
     expect(api.request).not.toHaveBeenCalled();
 
     await user.click(
-      screen.getByRole("combobox", { name: "Categoria da linha 7" }),
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 7" }),
+      ),
     );
     await user.click(
       await screen.findByRole("option", { name: "Alimentação" }),
@@ -214,9 +220,11 @@ describe("FinancialStatementImportDialog", () => {
       screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
       { target: { files: [file] } },
     );
-    await screen.findByText("Possível duplicidade");
+    await screen.findAllByText("Possível duplicidade");
     await user.click(
-      screen.getByRole("combobox", { name: "Categoria da linha 2" }),
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 2" }),
+      ),
     );
     await user.click(
       await screen.findByRole("option", { name: "Alimentação" }),
@@ -236,6 +244,56 @@ describe("FinancialStatementImportDialog", () => {
       "/api/financial-statement-import/confirm",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("keeps the narrow-screen review usable without horizontal table scrolling", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(mappedPreview("Mercado", "d".repeat(64))),
+    );
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+
+    const mobileRow = await screen.findByRole("article");
+    expect(within(mobileRow).getByLabelText("Importar linha 2")).toBeTruthy();
+    expect(
+      within(mobileRow).getByLabelText("Descrição da linha 2"),
+    ).toBeTruthy();
+    expect(within(mobileRow).getByLabelText("Data da linha 2")).toBeTruthy();
+    expect(within(mobileRow).getByLabelText("Valor da linha 2")).toBeTruthy();
+    await user.click(
+      within(mobileRow).getByRole("combobox", {
+        name: "Categoria da linha 2",
+      }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Alimentação" }),
+    );
+    expect(
+      within(mobileRow).getByRole("combobox", {
+        name: "Categoria da linha 2",
+      }).textContent,
+    ).toContain("Alimentação");
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).toContain("overflow-x-hidden");
+    expect(dialog.className).toContain("w-[calc(100vw-2rem)]");
   });
 
   it("applies a category to exact same-description rows and can opt out of remembering", async () => {
@@ -328,29 +386,36 @@ describe("FinancialStatementImportDialog", () => {
     await user.click(
       await screen.findByRole("button", { name: "Montar prévia" }),
     );
-    await screen.findByText("Categoria da sua escolha anterior");
+    await screen.findAllByText("Categoria da sua escolha anterior");
 
     await user.click(
-      screen.getByRole("combobox", { name: "Categoria da linha 3" }),
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 3" }),
+      ),
     );
     await user.click(
       await screen.findByRole("option", { name: "Alimentação" }),
     );
     expect(
-      screen.getByRole("combobox", { name: "Categoria da linha 2" })
-        .textContent,
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 2" }),
+      ).textContent,
     ).toContain("Alimentação");
     expect(
-      screen.getByRole("combobox", { name: "Categoria da linha 3" })
-        .textContent,
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 3" }),
+      ).textContent,
     ).toContain("Alimentação");
     expect(
-      screen.getByRole("combobox", { name: "Categoria da linha 4" })
-        .textContent,
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 4" }),
+      ).textContent,
     ).toContain("Selecione");
 
     await user.click(
-      screen.getByRole("combobox", { name: "Categoria da linha 4" }),
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 4" }),
+      ),
     );
     await user.click(await screen.findByRole("option", { name: "Salário" }));
     await user.click(
@@ -397,12 +462,12 @@ describe("FinancialStatementImportDialog", () => {
     });
 
     secondResponse.resolve(mappedPreview("Arquivo B", "b".repeat(64)));
-    await screen.findByDisplayValue("Arquivo B");
+    await screen.findAllByDisplayValue("Arquivo B");
     firstResponse.resolve(mappedPreview("Arquivo A", "a".repeat(64)));
     await waitFor(() =>
       expect(screen.queryByDisplayValue("Arquivo A")).toBeNull(),
     );
-    expect(screen.getByDisplayValue("Arquivo B")).toBeTruthy();
+    expect(firstMatch(screen.getAllByDisplayValue("Arquivo B"))).toBeTruthy();
     rerender(
       <FinancialStatementImportDialog
         open

@@ -25,7 +25,7 @@ export function getApiRequestId(request?: Request) {
 function isOwnerScopedPrivateApi(route: string) {
   return (
     route === "/api/proventos" ||
-    /^\/api\/(portfolio|imports|positions|emergency-reserve|financial-recurrences|financial-entries|financial-categories|finance-overview|finance-capacity|finance-close|cdb-rates|learning|billing)(\/|$)/.test(
+    /^\/api\/(portfolio|imports|positions|emergency-reserve|financial-recurrences|financial-entries|financial-categories|financial-statement-import|finance-overview|finance-capacity|finance-close|cdb-rates|learning|billing)(\/|$)/.test(
       route,
     ) ||
     route.startsWith("/api/analyses/portfolio-opportunities") ||

@@ -229,6 +229,56 @@ describe("withApiRequestLogging", () => {
     });
   });
 
+  it.each([
+    "/api/financial-statement-import/preview",
+    "/api/financial-statement-import/confirm",
+  ])("scopes %s to the authenticated owner", async (route) => {
+    authorization.user = {
+      id: "statement-owner",
+      role: "USER",
+      betaExpiresAt: null,
+    };
+    const handler = withApiRequestLogging(
+      "POST",
+      route,
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+
+    const response = await handler(
+      new Request(`https://investlab.test${route}`, {
+        method: "POST",
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ownerId: "statement-owner",
+    });
+  });
+
+  it("requires authentication for financial statement imports", async () => {
+    authorization.user = null;
+    const endpoint = vi.fn(async (_request: Request) =>
+      Response.json({ imported: true }),
+    );
+    const handler = withApiRequestLogging(
+      "POST",
+      "/api/financial-statement-import/confirm",
+      endpoint,
+    );
+
+    const response = await handler(
+      new Request(
+        "https://investlab.test/api/financial-statement-import/confirm",
+        { method: "POST", body: "{}" },
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    expect(endpoint).not.toHaveBeenCalled();
+  });
+
   it("permits support-mode reads of owner inputs and denies writes", async () => {
     support.token = "a".repeat(43);
     support.active = { targetUserId: "customer-1" };
@@ -588,6 +638,8 @@ describe("withApiRequestLogging", () => {
     ["POST", "/api/finance-overview"],
     ["POST", "/api/finance-close"],
     ["POST", "/api/financial-entries"],
+    ["POST", "/api/financial-statement-import/preview"],
+    ["POST", "/api/financial-statement-import/confirm"],
     ["PATCH", "/api/financial-entries"],
     ["DELETE", "/api/financial-entries"],
     ["POST", "/api/financial-categories"],

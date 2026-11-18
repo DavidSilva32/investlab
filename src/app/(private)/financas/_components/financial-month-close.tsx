@@ -75,7 +75,10 @@ export function FinancialMonthClose({
 }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const isFutureMonth = month > monthNow();
+  const currentMonth = monthNow();
+  const isCurrentMonth = month === currentMonth;
+  const isFutureMonth = month > currentMonth;
+  const isPastMonth = month < currentMonth;
   const isReviewNeeded = close?.status === "needs_review";
   const closedDate = close
     ? new Intl.DateTimeFormat("pt-BR", {
@@ -83,6 +86,17 @@ export function FinancialMonthClose({
         timeZone: "America/Sao_Paulo",
       }).format(new Date(close.closedAt))
     : null;
+
+  if (isFutureMonth && !close) return null;
+
+  if (isCurrentMonth && !close) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        O mês está em andamento. O fechamento fica disponível no próximo mês e
+        registra um retrato, sem bloquear novos lançamentos.
+      </p>
+    );
+  }
 
   async function closeMonth() {
     setSaving(true);
@@ -150,11 +164,15 @@ export function FinancialMonthClose({
                     : "Fechamento do mês"}
               </p>
               <p className="text-sm text-muted-foreground">
-                {isReviewNeeded
-                  ? `Os dados mudaram depois do fechamento de ${closedDate}. O registro fechado foi preservado; revise e feche novamente para atualizá-lo.`
-                  : close
-                    ? `Fechado em ${closedDate}. O fechamento guarda os valores deste mês naquela data.`
-                    : "Registre um retrato dos valores deste mês para consultar depois."}
+                {isCurrentMonth && isReviewNeeded
+                  ? "Os lançamentos mudaram desde este retrato. A revisão ficará disponível quando o mês terminar; você pode continuar registrando normalmente."
+                  : isCurrentMonth
+                    ? "Este é um retrato dos valores até agora. Novos lançamentos continuam permitidos e podem pedir revisão depois."
+                    : isReviewNeeded
+                      ? `Os dados mudaram depois do fechamento de ${closedDate}. O registro fechado foi preservado; revise e feche novamente para atualizá-lo.`
+                      : close
+                        ? `Fechado em ${closedDate}. O fechamento guarda os valores deste mês naquela data.`
+                        : "Registre um retrato dos valores deste mês para consultar depois."}
               </p>
               {close && (
                 <p className="text-sm text-muted-foreground">
@@ -193,20 +211,22 @@ export function FinancialMonthClose({
               )}
             </div>
           </div>
-          <Button
-            className="shrink-0"
-            variant={isReviewNeeded || !close ? "default" : "outline"}
-            disabled={readOnly || isFutureMonth || saving}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {saving
-              ? "Salvando..."
-              : isReviewNeeded
-                ? "Revisar fechamento"
-                : close
-                  ? "Fechar novamente"
-                  : "Fechar mês"}
-          </Button>
+          {isPastMonth && (
+            <Button
+              className="shrink-0"
+              variant={isReviewNeeded || !close ? "default" : "outline"}
+              disabled={readOnly || saving}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {saving
+                ? "Salvando..."
+                : isReviewNeeded
+                  ? "Revisar fechamento"
+                  : close
+                    ? "Fechar novamente"
+                    : "Fechar mês"}
+            </Button>
+          )}
         </CardContent>
       </Card>
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -217,8 +237,8 @@ export function FinancialMonthClose({
             </AlertDialogTitle>
             <AlertDialogDescription>
               {close
-                ? "Será criado um novo registro com os valores atuais. Os fechamentos anteriores continuarão disponíveis nesta tela."
-                : "O sistema vai guardar os valores registrados para este mês. Se você alterar ou adicionar lançamentos depois, o fechamento será marcado para revisão."}
+                ? "Será guardado um novo retrato dos valores atuais. Isso não bloqueia lançamentos; os fechamentos anteriores continuarão disponíveis nesta tela."
+                : "O sistema vai guardar um retrato dos valores registrados neste mês. Isso não bloqueia lançamentos. Se você alterar ou adicionar lançamentos depois, o fechamento será marcado para revisão."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -505,7 +505,7 @@ export function FinancialStatementImportDialog({
         if (!next) reset();
       }}
     >
-      <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+      <DialogContent className="box-border max-h-[min(92dvh,56rem)] w-[calc(100vw-2rem)] min-w-0 max-w-6xl overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Importar extrato</DialogTitle>
           <DialogDescription>
@@ -513,10 +513,10 @@ export function FinancialStatementImportDialog({
             seu fluxo financeiro.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed p-4 text-sm hover:bg-muted/40">
-            <FileSpreadsheet className="size-5 text-primary" />
-            <span className="min-w-0 flex-1">
+        <div className="min-w-0 space-y-4">
+          <label className="flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 text-sm hover:bg-muted/40 sm:flex-nowrap sm:p-4">
+            <FileSpreadsheet className="size-5 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1 break-words">
               {file?.name ??
                 "Escolha um arquivo CSV, XLS ou XLSX (até 5 MB e 500 linhas)."}
             </span>
@@ -529,7 +529,9 @@ export function FinancialStatementImportDialog({
                 void chooseFile(event.target.files?.[0] ?? null)
               }
             />
-            <span className="text-primary">Selecionar arquivo</span>
+            <span className="ml-auto shrink-0 text-primary">
+              Selecionar arquivo
+            </span>
           </label>
           <p className="text-xs text-muted-foreground">
             O arquivo é processado para criar a prévia e não é guardado. Só os
@@ -688,23 +690,23 @@ export function FinancialStatementImportDialog({
                   Alterar colunas
                 </Button>
               </div>
-              <div className="max-h-[42vh] overflow-auto rounded-md border">
-                <table className="w-full min-w-[850px] text-sm">
+              <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
+                <table className="w-full table-fixed text-sm">
                   <thead className="sticky top-0 bg-muted">
                     <tr>
-                      {[
-                        "Importar",
-                        "Descrição",
-                        "Tipo",
-                        "Data",
-                        "Valor",
-                        "Categoria",
-                        "Revisão",
-                      ].map((heading) => (
-                        <th key={heading} className="p-2 text-left font-medium">
-                          {heading}
-                        </th>
-                      ))}
+                      <th className="w-12 p-2 text-left font-medium">
+                        Importar
+                      </th>
+                      <th className="w-[22%] p-2 text-left font-medium">
+                        Descrição
+                      </th>
+                      <th className="w-28 p-2 text-left font-medium">Tipo</th>
+                      <th className="w-32 p-2 text-left font-medium">Data</th>
+                      <th className="w-28 p-2 text-left font-medium">Valor</th>
+                      <th className="w-48 p-2 text-left font-medium">
+                        Categoria
+                      </th>
+                      <th className="p-2 text-left font-medium">Revisão</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -728,7 +730,7 @@ export function FinancialStatementImportDialog({
                               aria-label={`Importar linha ${row.sourceRow}`}
                             />
                           </td>
-                          <td className="max-w-56 p-2">
+                          <td className="p-2">
                             <Input
                               value={row.description}
                               onChange={(event) => {
@@ -829,7 +831,7 @@ export function FinancialStatementImportDialog({
                               aria-label={`Valor da linha ${row.sourceRow}`}
                             />
                           </td>
-                          <td className="min-w-48 p-2">
+                          <td className="p-2">
                             <Select
                               value={row.categoryId}
                               onValueChange={(value) =>
@@ -859,7 +861,7 @@ export function FinancialStatementImportDialog({
                               </p>
                             )}
                           </td>
-                          <td className="max-w-60 p-2 text-xs">
+                          <td className="break-words p-2 text-xs">
                             {row.alreadyImported && (
                               <p className="mb-1 text-muted-foreground">
                                 Este arquivo já foi importado; a linha será
@@ -888,6 +890,192 @@ export function FinancialStatementImportDialog({
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="max-h-[42vh] space-y-3 overflow-y-auto overflow-x-hidden lg:hidden">
+                {reviewRows.map((row) => {
+                  const rowErrors = [...row.errors];
+                  if (row.included && !row.categoryId)
+                    rowErrors.push("Escolha uma categoria.");
+                  const compatibleCategories = activeCategories.filter(
+                    (category) => category.kind === row.kind,
+                  );
+                  return (
+                    <article
+                      key={row.sourceRow}
+                      className="min-w-0 space-y-3 rounded-md border p-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Checkbox
+                          checked={row.included}
+                          onCheckedChange={(checked) =>
+                            updateRow(row.sourceRow, {
+                              included: checked === true,
+                            })
+                          }
+                          aria-label={`Importar linha ${row.sourceRow}`}
+                        />
+                        <p className="min-w-0 flex-1 text-sm font-medium">
+                          Linha {row.sourceRow}
+                        </p>
+                      </div>
+                      {row.alreadyImported && (
+                        <p className="text-xs text-muted-foreground">
+                          Este arquivo já foi importado; a linha será ignorada.
+                        </p>
+                      )}
+                      {row.possibleDuplicate && (
+                        <p className="flex items-center gap-1 text-xs text-amber-700">
+                          <AlertTriangle className="size-3 shrink-0" />
+                          Possível duplicidade. Confira antes de importar.
+                        </p>
+                      )}
+                      <label className="block space-y-1 text-xs text-muted-foreground">
+                        Descrição
+                        <Input
+                          value={row.description}
+                          onChange={(event) => {
+                            const description = event.target.value;
+                            updateRow(row.sourceRow, {
+                              description,
+                              errors:
+                                description.trim() && description.length <= 120
+                                  ? row.errors.filter(
+                                      (message) =>
+                                        message !== "Informe a descrição." &&
+                                        message !==
+                                          "A descrição deve ter até 120 caracteres.",
+                                    )
+                                  : row.errors,
+                            });
+                          }}
+                          aria-label={`Descrição da linha ${row.sourceRow}`}
+                        />
+                      </label>
+                      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                          Tipo
+                          <Select
+                            value={row.kind ?? ""}
+                            onValueChange={(value: "INCOME" | "EXPENSE") =>
+                              updateRow(row.sourceRow, {
+                                kind: value,
+                                errors: row.errors.filter(
+                                  (message) =>
+                                    !message.includes("débito ou crédito") &&
+                                    !message.includes("débito e crédito"),
+                                ),
+                              })
+                            }
+                          >
+                            <SelectTrigger
+                              aria-label={`Tipo da linha ${row.sourceRow}`}
+                            >
+                              <SelectValue placeholder="Tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="INCOME">Receita</SelectItem>
+                              <SelectItem value="EXPENSE">Despesa</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                        <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                          Data
+                          <Input
+                            value={row.actualDate ?? ""}
+                            placeholder="dd/mm/aaaa"
+                            onChange={(event) => {
+                              const actualDate = event.target.value;
+                              updateRow(row.sourceRow, {
+                                actualDate,
+                                errors: toIsoDate(actualDate)
+                                  ? row.errors.filter(
+                                      (message) =>
+                                        !message.startsWith("Confira a data"),
+                                    )
+                                  : row.errors,
+                              });
+                            }}
+                            aria-label={`Data da linha ${row.sourceRow}`}
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                          Valor
+                          <Input
+                            inputMode="decimal"
+                            value={
+                              row.amount === null ? "" : String(row.amount)
+                            }
+                            onChange={(event) => {
+                              const value = Number(
+                                event.target.value.replace(",", "."),
+                              );
+                              const amount =
+                                event.target.value === "" ||
+                                !Number.isFinite(value) ||
+                                value <= 0
+                                  ? null
+                                  : Math.round(value * 100) / 100;
+                              updateRow(row.sourceRow, {
+                                amount,
+                                errors: amount
+                                  ? row.errors.filter(
+                                      (message) =>
+                                        !message.startsWith(
+                                          "Confira os valores de débito",
+                                        ) &&
+                                        !message.startsWith(
+                                          "Confira o valor",
+                                        ) &&
+                                        !message.startsWith("O valor precisa"),
+                                    )
+                                  : row.errors,
+                              });
+                            }}
+                            aria-label={`Valor da linha ${row.sourceRow}`}
+                          />
+                        </label>
+                        <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                          Categoria
+                          <Select
+                            value={row.categoryId}
+                            onValueChange={(value) =>
+                              updateRow(row.sourceRow, { categoryId: value })
+                            }
+                            disabled={!row.kind}
+                          >
+                            <SelectTrigger
+                              aria-label={`Categoria da linha ${row.sourceRow}`}
+                            >
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {compatibleCategories.map((category) => (
+                                <SelectItem
+                                  key={category.id}
+                                  value={category.id}
+                                >
+                                  {category.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      </div>
+                      {row.categorySource === "saved" && (
+                        <p className="text-xs text-muted-foreground">
+                          Categoria da sua escolha anterior
+                        </p>
+                      )}
+                      {rowErrors.length > 0 && (
+                        <div className="space-y-1 text-xs text-destructive">
+                          {rowErrors.map((message) => (
+                            <p key={message}>{message}</p>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
               <p className="text-xs text-muted-foreground">
                 Se o extrato incluir compras individuais do cartão e o pagamento
@@ -929,7 +1117,7 @@ export function FinancialStatementImportDialog({
             </section>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="min-w-0 flex-wrap gap-2 sm:space-x-0">
           <Button
             type="button"
             variant="outline"
