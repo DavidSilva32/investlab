@@ -18,23 +18,27 @@ const validInput = {
 describe("statementConfirmSchema", () => {
   it("applies default options and trims valid row descriptions", () => {
     expect(statementConfirmSchema.parse(validInput)).toMatchObject({
-      allowPossibleDuplicates: false,
       rememberCategories: true,
       rows: [{ description: "Mercado" }],
     });
   });
 
-  it("accepts explicit flags and valid ISO calendar dates", () => {
+  it("accepts the category-memory option and nullable categories for duplicate rows", () => {
     expect(
       statementConfirmSchema.parse({
         ...validInput,
-        allowPossibleDuplicates: true,
         rememberCategories: false,
-        rows: [{ ...validInput.rows[0], actualDate: "2024-02-29" }],
+        rows: [
+          {
+            ...validInput.rows[0],
+            categoryId: null,
+            actualDate: "2024-02-29",
+          },
+        ],
       }),
     ).toMatchObject({
-      allowPossibleDuplicates: true,
       rememberCategories: false,
+      rows: [{ categoryId: null }],
     });
   });
 

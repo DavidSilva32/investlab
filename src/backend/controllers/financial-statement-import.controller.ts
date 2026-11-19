@@ -35,15 +35,14 @@ export class FinancialStatementImportController {
     logger.info("financial_statement_import_confirmed", {
       requestId,
       imported: result.importedCount,
-      repeated: result.alreadyImportedCount,
-      possibleDuplicates: result.possibleDuplicateCount,
+      alreadyImported: result.alreadyImportedCount,
+      duplicatesSkipped: result.duplicateCount,
     });
+    const skippedCount = result.alreadyImportedCount + result.duplicateCount;
     return Response.json(
       {
         ...result,
-        message: result.importedCount
-          ? `${result.importedCount} lançamento(s) importado(s).`
-          : "Este arquivo já havia sido importado; nenhum lançamento novo foi criado.",
+        message: `Importação concluída: ${result.importedCount} novo(s) lançamento(s) importado(s), ${skippedCount} repetido(s) ignorado(s).`,
       },
       { status: result.importedCount ? 201 : 200 },
     );

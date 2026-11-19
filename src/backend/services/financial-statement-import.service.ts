@@ -586,6 +586,7 @@ export class FinancialStatementImportService {
     if (
       input.rows.some(
         (row) =>
+          row.categoryId !== null &&
           !categories.some(
             (category) =>
               category.id === row.categoryId &&
@@ -599,26 +600,11 @@ export class FinancialStatementImportService {
         400,
       );
     }
-    const alreadyImportedRows =
-      await financialStatementImportRepository.listAlreadyImportedRows(
-        input.fileHash,
-        input.rows.map((row) => row.sourceRow),
-      );
-    const alreadyImported = new Set(
-      alreadyImportedRows.map((row) => row.sourceRow),
-    );
-    const duplicateRows =
-      await financialStatementImportRepository.findPossibleDuplicateRows(
-        input.rows.filter((row) => !alreadyImported.has(row.sourceRow)),
-      );
-    if (duplicateRows.length && !input.allowPossibleDuplicates) {
-      throw new ApplicationError(
-        "Há possíveis duplicidades. Revise os avisos e confirme novamente se quiser importar mesmo assim.",
-        409,
-      );
-    }
     const result = await financialStatementImportRepository.confirm(input);
-    return { ...result, possibleDuplicateCount: duplicateRows.length };
+    return {
+      ...result,
+      skippedCount: result.alreadyImportedCount + result.duplicateCount,
+    };
   }
 }
 

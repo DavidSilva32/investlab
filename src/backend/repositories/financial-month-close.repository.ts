@@ -36,6 +36,15 @@ function monthsFromDates(dates: Array<string | null | undefined>) {
 }
 
 export class FinancialMonthCloseRepository {
+  async acquireFinancialWriteLock(
+    transaction: FinancialDatabaseTransaction,
+    userId: string,
+  ) {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext('financial-entry-writes'))`,
+    );
+  }
+
   async acquireMonthLocks(
     transaction: FinancialDatabaseTransaction,
     userId: string,

@@ -32,7 +32,8 @@ describe("FinancialStatementImportController", () => {
     service.confirm.mockResolvedValue({
       importedCount: 2,
       alreadyImportedCount: 0,
-      possibleDuplicateCount: 0,
+      duplicateCount: 0,
+      skippedCount: 0,
     });
   });
 
@@ -85,33 +86,39 @@ describe("FinancialStatementImportController", () => {
     );
   });
 
-  it("returns a created count and a no-op response for an already imported file", async () => {
+  it("returns imported and automatically skipped counts", async () => {
     const body = { selections: [] };
     const imported = await controller.confirm(body, "req-confirm");
     expect(imported.status).toBe(201);
     await expect(imported.json()).resolves.toMatchObject({
       importedCount: 2,
-      message: "2 lançamento(s) importado(s).",
+      skippedCount: 0,
+      message:
+        "Importação concluída: 2 novo(s) lançamento(s) importado(s), 0 repetido(s) ignorado(s).",
     });
     expect(service.confirm).toHaveBeenCalledWith(body);
 
     service.confirm.mockResolvedValueOnce({
       importedCount: 0,
       alreadyImportedCount: 3,
-      possibleDuplicateCount: 0,
+      duplicateCount: 2,
+      skippedCount: 5,
     });
     const repeated = await controller.confirm(body, "req-repeat");
     expect(repeated.status).toBe(200);
     await expect(repeated.json()).resolves.toMatchObject({
+      importedCount: 0,
+      skippedCount: 5,
       message:
-        "Este arquivo já havia sido importado; nenhum lançamento novo foi criado.",
+        "Importação concluída: 0 novo(s) lançamento(s) importado(s), 5 repetido(s) ignorado(s).",
     });
     expect(logger.info).toHaveBeenCalledWith(
       "financial_statement_import_confirmed",
       expect.objectContaining({
         requestId: "req-repeat",
         imported: 0,
-        repeated: 3,
+        alreadyImported: 3,
+        duplicatesSkipped: 2,
       }),
     );
   });

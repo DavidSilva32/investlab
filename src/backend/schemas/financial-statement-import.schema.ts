@@ -15,7 +15,6 @@ const date = z
 export const statementConfirmSchema = z
   .object({
     fileHash: hash,
-    allowPossibleDuplicates: z.boolean().default(false),
     rememberCategories: z.boolean().default(true),
     rows: z
       .array(
@@ -24,7 +23,8 @@ export const statementConfirmSchema = z
             sourceRow: z.number().int().min(2).max(100_000),
             kind: z.enum(["INCOME", "EXPENSE"]),
             description: z.string().trim().min(1).max(120),
-            categoryId: z.string().uuid(),
+            categoryId: z.string().uuid().nullable(),
+            possibleDuplicate: z.boolean().optional(),
             actualDate: date,
             actualAmount: z
               .number()

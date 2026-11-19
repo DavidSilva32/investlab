@@ -17,6 +17,19 @@ vi.mock("@/infrastructure/database/client", () => ({
 
 import { FinancialRepository } from "@/backend/repositories/financial.repository";
 
+function selectSequence(rows: unknown[][]) {
+  let index = 0;
+  const next = async () => rows[index++] ?? [];
+  return vi.fn(() => ({
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({
+        limit: next,
+        for: vi.fn(() => ({ limit: next })),
+      })),
+    })),
+  }));
+}
+
 describe("FinancialRepository", () => {
   const repository = new FinancialRepository();
 
@@ -126,6 +139,7 @@ describe("FinancialRepository", () => {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
+            limit: selected,
             for: vi.fn(() => ({ limit: selected })),
           })),
         })),
@@ -161,11 +175,17 @@ describe("FinancialRepository", () => {
       runWithDataOwner("owner-f", () => repository.createEntry(input)),
     ).resolves.toEqual(row);
     expect(values).toHaveBeenCalledWith({ ...input, userId: "owner-f" });
+    expect(transaction.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.insert.mock.invocationCallOrder[0],
+    );
     await expect(
       runWithDataOwner("owner-f", () =>
         repository.updateEntry("entry-id", input),
       ),
     ).resolves.toEqual(row);
+    expect(transaction.execute.mock.invocationCallOrder[3]).toBeLessThan(
+      transaction.select.mock.invocationCallOrder[0],
+    );
     expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
       "owner-f",
     );
@@ -184,6 +204,36 @@ describe("FinancialRepository", () => {
         repository.updateEntry("entry-id", input),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("returns null when an entry disappears before the update row lock", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: selectSequence([
+        [{ expectedDate: "2026-10-10", actualDate: null }],
+        [],
+      ]),
+      update: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-update-race", () =>
+        repository.updateEntry("entry-id", {
+          kind: "EXPENSE",
+          description: "Luz",
+          categoryId: "category-id",
+          expectedAmount: "100.00",
+          expectedDate: "2026-10-10",
+          actualAmount: null,
+          actualDate: null,
+        }),
+      ),
+    ).resolves.toBeNull();
+    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.update).not.toHaveBeenCalled();
   });
 
   it("creates a recurrence and linked entry in one transaction and rolls back failures", async () => {
@@ -218,6 +268,11 @@ describe("FinancialRepository", () => {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
+            limit: vi
+              .fn()
+              .mockResolvedValue([
+                { expectedDate: "2026-10-10", actualDate: null },
+              ]),
             for: vi.fn(() => ({
               limit: vi
                 .fn()
@@ -254,6 +309,9 @@ describe("FinancialRepository", () => {
       ),
     ).resolves.toMatchObject({ id: "entry-id", recurrenceId });
     expect(database.transaction).toHaveBeenCalledOnce();
+    expect(transaction.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.insert.mock.invocationCallOrder[0],
+    );
     expect(insertedValues).toEqual([
       {
         table: "financial_recurrences",
@@ -321,9 +379,11 @@ describe("FinancialRepository", () => {
   it("rejects recurrence saves when the linked entry is not owned", async () => {
     const limit = vi.fn().mockResolvedValue([]);
     const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
+            limit,
             for: vi.fn(() => ({ limit })),
           })),
         })),
@@ -364,6 +424,49 @@ describe("FinancialRepository", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects recurrence save if the linked entry disappears before its row lock", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: selectSequence([
+        [{ expectedDate: "2026-10-10", actualDate: null }],
+        [],
+      ]),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-recurrence-race", () =>
+        repository.saveEntryWithRecurrence(
+          "entry-id",
+          {
+            kind: "EXPENSE",
+            description: "Aluguel",
+            categoryId: "category-id",
+            recurrenceId: null,
+            expectedAmount: "550.00",
+            expectedDate: "2026-10-10",
+            actualAmount: null,
+            actualDate: null,
+          },
+          {
+            amount: "550.00",
+            categoryId: "category-id",
+            description: "Aluguel",
+            essential: true,
+            firstDueDate: "2026-11-10",
+            frequency: "MONTHLY",
+            kind: "EXPENSE",
+          },
+        ),
+      ),
+    ).rejects.toThrow("The linked financial entry could not be found.");
+    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
   it("deletes only an entry belonging to the active owner", async () => {
     const returning = vi.fn().mockResolvedValue([{ id: "entry-id" }]);
     const where = vi.fn().mockReturnValue({ returning });
@@ -375,6 +478,7 @@ describe("FinancialRepository", () => {
       select: vi.fn(() => ({
         from: vi.fn(() => ({
           where: vi.fn(() => ({
+            limit: selected,
             for: vi.fn(() => ({ limit: selected })),
           })),
         })),
@@ -395,6 +499,9 @@ describe("FinancialRepository", () => {
     await expect(
       runWithDataOwner("owner-g", () => repository.deleteEntry("entry-id")),
     ).resolves.toEqual({ id: "entry-id" });
+    expect(transaction.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.select.mock.invocationCallOrder[0],
+    );
     expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
       "owner-g",
     );
@@ -409,5 +516,27 @@ describe("FinancialRepository", () => {
     await expect(
       runWithDataOwner("owner-g", () => repository.deleteEntry("entry-id")),
     ).resolves.toBeNull();
+  });
+
+  it("returns null without deleting when an entry disappears before its row lock", async () => {
+    const transaction = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select: selectSequence([
+        [{ expectedDate: "2026-10-10", actualDate: null }],
+        [],
+      ]),
+      delete: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-delete-race", () =>
+        repository.deleteEntry("entry-id"),
+      ),
+    ).resolves.toBeNull();
+    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.delete).not.toHaveBeenCalled();
   });
 });

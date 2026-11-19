@@ -124,6 +124,18 @@ describe("FinancialMonthCloseRepository", () => {
     ).toEqual(expect.arrayContaining([state.userId, "2026-09", "2026-10"]));
   });
 
+  it("uses a separate owner-level lock to serialize financial entry writes", async () => {
+    await repository.acquireFinancialWriteLock(
+      state.transaction as never,
+      "owner-write-lock",
+    );
+
+    const lockSql = state.transaction.execute.mock.calls[0]?.[0];
+    const query = new PgDialect().sqlToQuery(lockSql);
+    expect(query.params).toEqual(["owner-write-lock"]);
+    expect(query.sql).toContain("financial-entry-writes");
+  });
+
   it("does not lock or update when a mutation has no dated amount", async () => {
     await repository.markDatesForReview(
       state.transaction as never,

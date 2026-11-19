@@ -132,6 +132,7 @@ describe("FinancialStatementImportService", () => {
     confirmRows.mockResolvedValue({
       importedCount: 1,
       alreadyImportedCount: 0,
+      duplicateCount: 0,
     });
   });
 
@@ -934,43 +935,45 @@ describe("FinancialStatementImportService", () => {
     });
   });
 
-  it("accepts a confirmed duplicate only after explicit acknowledgement", async () => {
-    findPossibleDuplicateRows.mockResolvedValue([2]);
+  it("confirms overlapping rows without requiring duplicate acknowledgement", async () => {
+    confirmRows.mockResolvedValue({
+      importedCount: 0,
+      alreadyImportedCount: 0,
+      duplicateCount: 1,
+    });
     const input = {
       fileHash: "a".repeat(64),
-      allowPossibleDuplicates: false,
       rows: [
         {
           sourceRow: 2,
           kind: "EXPENSE",
           description: "Compra",
-          categoryId: "123e4567-e89b-42d3-a456-426614174000",
+          categoryId: null,
           actualDate: "2026-11-14",
           actualAmount: 10,
         },
       ],
     };
-    await expect(
-      financialStatementImportService.confirm(input),
-    ).rejects.toThrow("Há possíveis duplicidades.");
-    expect(confirmRows).not.toHaveBeenCalled();
-    const result = await financialStatementImportService.confirm({
-      ...input,
-      allowPossibleDuplicates: true,
-    });
+    const result = await financialStatementImportService.confirm(input);
     expect(result).toEqual({
-      importedCount: 1,
+      importedCount: 0,
       alreadyImportedCount: 0,
-      possibleDuplicateCount: 1,
+      duplicateCount: 1,
+      skippedCount: 1,
     });
+    expect(findPossibleDuplicateRows).not.toHaveBeenCalled();
+    expect(confirmRows).toHaveBeenCalledOnce();
     expect(confirmRows).toHaveBeenLastCalledWith(
       expect.objectContaining({ rememberCategories: true }),
     );
   });
 
   it("does not compare rows already imported from the same statement", async () => {
-    listAlreadyImportedRows.mockResolvedValue([{ sourceRow: 2 }]);
-    findPossibleDuplicateRows.mockResolvedValue([]);
+    confirmRows.mockResolvedValue({
+      importedCount: 0,
+      alreadyImportedCount: 1,
+      duplicateCount: 0,
+    });
     const result = await financialStatementImportService.confirm({
       fileHash: "a".repeat(64),
       rows: [
@@ -978,16 +981,16 @@ describe("FinancialStatementImportService", () => {
           sourceRow: 2,
           kind: "EXPENSE",
           description: "Compra",
-          categoryId: "123e4567-e89b-42d3-a456-426614174000",
+          categoryId: null,
           actualDate: "2026-11-14",
           actualAmount: 10,
         },
       ],
     });
 
-    expect(findPossibleDuplicateRows).toHaveBeenCalledWith([]);
+    expect(findPossibleDuplicateRows).not.toHaveBeenCalled();
     expect(confirmRows).toHaveBeenCalledOnce();
-    expect(result.possibleDuplicateCount).toBe(0);
+    expect(result.skippedCount).toBe(1);
   });
 
   it("passes the user's category-memory opt-out to persistence", async () => {

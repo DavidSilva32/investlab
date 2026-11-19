@@ -5,15 +5,54 @@ const database = vi.hoisted(() => ({
   transaction: vi.fn(),
   select: vi.fn(),
 }));
-const markDatesForReview = vi.hoisted(() => vi.fn());
+const { markDatesForReview, acquireMonthLocks, acquireFinancialWriteLock } =
+  vi.hoisted(() => ({
+    markDatesForReview: vi.fn(),
+    acquireMonthLocks: vi.fn(async () => undefined),
+    acquireFinancialWriteLock: vi.fn(async () => undefined),
+  }));
 vi.mock("@/infrastructure/database/client", () => ({
   getDatabaseClient: () => database,
 }));
 vi.mock("@/backend/repositories/financial-month-close.repository", () => ({
-  financialMonthCloseRepository: { markDatesForReview },
+  financialMonthCloseRepository: {
+    markDatesForReview,
+    acquireMonthLocks,
+    acquireFinancialWriteLock,
+  },
 }));
 
 import { FinancialStatementImportRepository } from "@/backend/repositories/financial-statement-import.repository";
+
+function createConfirmSelectMock(options: {
+  hasRows: boolean;
+  imported?: Array<{ id: string }>;
+  later?: Array<{ id: string }>;
+  signatures?: Array<{
+    kind: string;
+    description: string;
+    actualDate: string;
+    actualAmount: string | number;
+  }>;
+}) {
+  let signaturePending = options.hasRows;
+  let limitedQueryCount = 0;
+  return vi.fn(() => ({
+    from: () => ({
+      where: () => {
+        if (signaturePending) {
+          signaturePending = false;
+          return Promise.resolve(options.signatures ?? []);
+        }
+        const queryIndex = limitedQueryCount++;
+        return {
+          limit: async () =>
+            queryIndex === 0 ? (options.imported ?? []) : (options.later ?? []),
+        };
+      },
+    }),
+  }));
+}
 
 describe("FinancialStatementImportRepository", () => {
   const repository = new FinancialStatementImportRepository();
@@ -113,6 +152,13 @@ describe("FinancialStatementImportRepository", () => {
             actualDate: "2026-11-15",
             actualAmount: 12.5,
           },
+          {
+            sourceRow: 6,
+            kind: "EXPENSE",
+            description: "Mercado do Bairro",
+            actualDate: "2026-11-14",
+            actualAmount: 12.5,
+          },
         ]),
       ),
     ).resolves.toEqual([3]);
@@ -137,14 +183,13 @@ describe("FinancialStatementImportRepository", () => {
       }),
     }));
     database.transaction.mockImplementation(async (callback) =>
-      callback({ select, insert }),
+      callback({ select, insert, execute: vi.fn().mockResolvedValue([]) }),
     );
 
     await expect(
       runWithDataOwner("owner-a", () =>
         repository.confirm({
           fileHash: "d".repeat(64),
-          allowPossibleDuplicates: false,
           rememberCategories: false,
           rows: [],
         }),
@@ -171,19 +216,22 @@ describe("FinancialStatementImportRepository", () => {
       }),
     }));
     database.transaction.mockImplementation(async (callback) =>
-      callback({ select, insert }),
+      callback({ select, insert, execute: vi.fn().mockResolvedValue([]) }),
     );
 
     await expect(
       runWithDataOwner("owner-a", () =>
         repository.confirm({
           fileHash: "f".repeat(64),
-          allowPossibleDuplicates: false,
           rememberCategories: false,
           rows: [],
         }),
       ),
-    ).resolves.toEqual({ importedCount: 0, alreadyImportedCount: 0 });
+    ).resolves.toEqual({
+      importedCount: 0,
+      alreadyImportedCount: 0,
+      duplicateCount: 0,
+    });
     expect(selectCount).toBe(2);
     expect(markDatesForReview).toHaveBeenCalledWith(
       expect.any(Object),
@@ -193,9 +241,7 @@ describe("FinancialStatementImportRepository", () => {
   });
 
   it("fails the transaction when a reserved row cannot create its financial entry", async () => {
-    const select = vi.fn(() => ({
-      from: () => ({ where: () => ({ limit: async () => [] }) }),
-    }));
+    const select = createConfirmSelectMock({ hasRows: true });
     const insert = vi
       .fn()
       .mockImplementationOnce(() => ({
@@ -216,14 +262,13 @@ describe("FinancialStatementImportRepository", () => {
         values: () => ({ returning: async () => [] }),
       }));
     database.transaction.mockImplementation(async (callback) =>
-      callback({ select, insert }),
+      callback({ select, insert, execute: vi.fn().mockResolvedValue([]) }),
     );
 
     await expect(
       runWithDataOwner("owner-a", () =>
         repository.confirm({
           fileHash: "e".repeat(64),
-          allowPossibleDuplicates: false,
           rememberCategories: false,
           rows: [
             {
@@ -240,12 +285,129 @@ describe("FinancialStatementImportRepository", () => {
     ).rejects.toThrow("The financial entry could not be created.");
   });
 
+  it("rejects a genuinely new row without a category", async () => {
+    const select = createConfirmSelectMock({ hasRows: true });
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({
+          returning: async () => [
+            { id: `reserved-${insert.mock.calls.length}` },
+          ],
+        }),
+        returning: async () => [{ id: "entry" }],
+      }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "e".repeat(64),
+          rememberCategories: true,
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Mercado",
+              categoryId: null,
+              actualDate: "2026-11-14",
+              actualAmount: 12.5,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      message: "Escolha uma categoria para cada lançamento novo.",
+      statusCode: 400,
+    });
+    expect(insert).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips only the matching existing occurrences while importing excess identical rows", async () => {
+    const existing = [
+      {
+        kind: "EXPENSE",
+        description: "Mercado",
+        actualDate: "2026-11-14",
+        actualAmount: "12.50",
+      },
+      {
+        kind: "EXPENSE",
+        description: " MERCADO ",
+        actualDate: "2026-11-14",
+        actualAmount: "12.50",
+      },
+    ];
+    const select = createConfirmSelectMock({
+      hasRows: true,
+      signatures: existing,
+    });
+    let insertIndex = 0;
+    const insert = vi.fn(() => {
+      const current = insertIndex++;
+      return {
+        values: () => ({
+          onConflictDoNothing: () => ({
+            returning: async () => [{ id: `row-${current}` }],
+          }),
+          returning: async () => [{ id: "entry-new" }],
+        }),
+      };
+    });
+    const execute = vi.fn().mockResolvedValue([]);
+    database.transaction.mockImplementation(async (callback) =>
+      callback({
+        select,
+        insert,
+        execute,
+        update: () => ({ set: () => ({ where: async () => undefined }) }),
+      }),
+    );
+    markDatesForReview.mockResolvedValue(undefined);
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "9".repeat(64),
+          rememberCategories: false,
+          rows: [1, 2, 3].map((sourceRow) => ({
+            sourceRow,
+            kind: "EXPENSE" as const,
+            description: "Mercado",
+            categoryId: "123e4567-e89b-42d3-a456-426614174000",
+            actualDate: "2026-11-14",
+            actualAmount: 12.5,
+          })),
+        }),
+      ),
+    ).resolves.toEqual({
+      importedCount: 1,
+      alreadyImportedCount: 0,
+      duplicateCount: 2,
+    });
+
+    expect(acquireMonthLocks).toHaveBeenCalledWith(
+      expect.any(Object),
+      "owner-a",
+      ["2026-11"],
+    );
+    expect(acquireFinancialWriteLock.mock.invocationCallOrder[0]).toBeLessThan(
+      acquireMonthLocks.mock.invocationCallOrder[0],
+    );
+    expect(insert).toHaveBeenCalledTimes(5);
+    expect(markDatesForReview).toHaveBeenCalledWith(
+      expect.any(Object),
+      "owner-a",
+      ["2026-11-14"],
+    );
+  });
+
   it("remembers confirmed exact-description category choices per owner", async () => {
     const insertedChoices: Array<Record<string, unknown>> = [];
     const conflictConfigs: Array<Record<string, unknown>> = [];
-    const select = vi.fn(() => ({
-      from: () => ({ where: () => ({ limit: async () => [] }) }),
-    }));
+    const select = createConfirmSelectMock({ hasRows: true });
     let insertIndex = 0;
     const insert = vi.fn(() => {
       const current = insertIndex++;
@@ -271,7 +433,12 @@ describe("FinancialStatementImportRepository", () => {
     const update = vi.fn(() => ({
       set: () => ({ where: async () => undefined }),
     }));
-    const transaction = { select, insert, update };
+    const transaction = {
+      select,
+      insert,
+      update,
+      execute: vi.fn().mockResolvedValue([]),
+    };
     database.transaction.mockImplementation(async (callback) =>
       callback(transaction),
     );
@@ -280,7 +447,6 @@ describe("FinancialStatementImportRepository", () => {
     await runWithDataOwner("owner-a", () =>
       repository.confirm({
         fileHash: "a".repeat(64),
-        allowPossibleDuplicates: false,
         rememberCategories: true,
         rows: [
           {
@@ -324,11 +490,10 @@ describe("FinancialStatementImportRepository", () => {
       };
     });
     const transaction = {
-      select: () => ({
-        from: () => ({ where: () => ({ limit: async () => [] }) }),
-      }),
+      select: createConfirmSelectMock({ hasRows: true }),
       insert,
       update: () => ({ set: () => ({ where: async () => undefined }) }),
+      execute: vi.fn().mockResolvedValue([]),
     };
     database.transaction.mockImplementation(async (callback) =>
       callback(transaction),
@@ -337,7 +502,6 @@ describe("FinancialStatementImportRepository", () => {
     await runWithDataOwner("owner-b", () =>
       repository.confirm({
         fileHash: "b".repeat(64),
-        allowPossibleDuplicates: false,
         rememberCategories: false,
         rows: [
           {
@@ -356,37 +520,22 @@ describe("FinancialStatementImportRepository", () => {
     expect(markDatesForReview).toHaveBeenCalledOnce();
   });
 
-  it("does not recreate a previously imported row and upserts its category rule", async () => {
-    const ruleValues: Array<Record<string, unknown>> = [];
-    const conflictUpdates: Array<Record<string, unknown>> = [];
-    const select = vi.fn(() => ({
-      from: () => ({
-        where: () => ({ limit: async () => [{ id: "existing-import" }] }),
+  it("does not recreate a previously imported row or remember its unreviewed category", async () => {
+    const select = createConfirmSelectMock({
+      hasRows: true,
+      imported: [{ id: "existing-import" }],
+    });
+    const insert = vi.fn().mockImplementationOnce(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({ returning: async () => [] }),
       }),
     }));
-    const insert = vi
-      .fn()
-      .mockImplementationOnce(() => ({
-        values: () => ({
-          onConflictDoNothing: () => ({ returning: async () => [] }),
-        }),
-      }))
-      .mockImplementationOnce(() => ({
-        values: (value: Record<string, unknown>) => {
-          ruleValues.push(value);
-          return {
-            onConflictDoUpdate: (config: Record<string, unknown>) => {
-              conflictUpdates.push(config);
-              return Promise.resolve();
-            },
-          };
-        },
-      }));
     database.transaction.mockImplementation(async (callback) =>
       callback({
         select,
         insert,
         update: vi.fn(),
+        execute: vi.fn().mockResolvedValue([]),
       }),
     );
 
@@ -394,7 +543,6 @@ describe("FinancialStatementImportRepository", () => {
       runWithDataOwner("owner-a", () =>
         repository.confirm({
           fileHash: "c".repeat(64),
-          allowPossibleDuplicates: false,
           rememberCategories: true,
           rows: [
             {
@@ -408,18 +556,98 @@ describe("FinancialStatementImportRepository", () => {
           ],
         }),
       ),
-    ).resolves.toEqual({ importedCount: 0, alreadyImportedCount: 1 });
+    ).resolves.toEqual({
+      importedCount: 0,
+      alreadyImportedCount: 1,
+      duplicateCount: 0,
+    });
+
+    expect(insert).toHaveBeenCalledOnce();
+    expect(markDatesForReview).toHaveBeenCalledOnce();
+  });
+
+  it("does not remember a category from a skipped duplicate row", async () => {
+    const select = createConfirmSelectMock({
+      hasRows: true,
+      signatures: [
+        {
+          kind: "EXPENSE",
+          description: "Mercado",
+          actualDate: "2026-11-14",
+          actualAmount: "12.50",
+        },
+      ],
+    });
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({ returning: async () => [{ id: "row" }] }),
+      }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({
+        select,
+        insert,
+        execute: vi.fn(),
+        update: vi.fn(),
+      }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "c".repeat(64),
+          rememberCategories: true,
+          rows: [
+            {
+              sourceRow: 6,
+              kind: "EXPENSE",
+              description: "Mercado",
+              categoryId: "223e4567-e89b-42d3-a456-426614174000",
+              actualDate: "2026-11-14",
+              actualAmount: 12.5,
+            },
+          ],
+        }),
+      ),
+    ).resolves.toMatchObject({ importedCount: 0, duplicateCount: 1 });
 
     expect(insert).toHaveBeenCalledTimes(2);
-    expect(ruleValues[0]).toMatchObject({
-      userId: "owner-a",
-      kind: "EXPENSE",
-      descriptionKey: "mercado do bairro",
-      categoryId: "223e4567-e89b-42d3-a456-426614174000",
+  });
+
+  it("asks for a fresh preview if a previously duplicated row disappears", async () => {
+    const select = createConfirmSelectMock({ hasRows: true });
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({ returning: async () => [{ id: "row" }] }),
+      }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "b".repeat(64),
+          rememberCategories: true,
+          rows: [
+            {
+              sourceRow: 6,
+              kind: "EXPENSE",
+              description: "Mercado",
+              categoryId: null,
+              possibleDuplicate: true,
+              actualDate: "2026-11-14",
+              actualAmount: 12.5,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Os lançamentos repetidos mudaram desde a revisão. Confira o extrato novamente.",
     });
-    expect(conflictUpdates[0].set).toMatchObject({
-      categoryId: "223e4567-e89b-42d3-a456-426614174000",
-    });
-    expect(markDatesForReview).toHaveBeenCalledOnce();
+    expect(insert).toHaveBeenCalledTimes(2);
   });
 });

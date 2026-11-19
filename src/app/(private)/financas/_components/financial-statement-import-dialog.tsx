@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -126,7 +126,6 @@ export function FinancialStatementImportDialog({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
-  const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [rememberCategories, setRememberCategories] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -140,17 +139,24 @@ export function FinancialStatementImportDialog({
       !row.kind ||
       !row.actualDate ||
       !row.amount ||
-      !row.categoryId,
+      (!row.categoryId && !row.possibleDuplicate && !row.alreadyImported),
   );
-  const duplicateCount = includedRows.filter(
-    (row) => row.possibleDuplicate,
+  const duplicateCount = reviewRows.filter(
+    (row) => row.possibleDuplicate || row.alreadyImported,
   ).length;
+  const rowsForReview = reviewRows.filter(
+    (row) => !row.possibleDuplicate && !row.alreadyImported,
+  );
   const classifiedAutomaticallyCount = includedRows.filter(
     (row) =>
       row.categorySource === "saved" || row.categorySource === "suggested",
   ).length;
   const needsCategoryCount = includedRows.filter(
-    (row) => row.kind && !row.categoryId,
+    (row) =>
+      row.kind &&
+      !row.categoryId &&
+      !row.possibleDuplicate &&
+      !row.alreadyImported,
   ).length;
   const activeCategories = categories.filter((category) => category.active);
   const hasCardPaymentOverlap =
@@ -170,7 +176,6 @@ export function FinancialStatementImportDialog({
     setFile(null);
     setPreview(null);
     setReviewRows([]);
-    setAllowDuplicates(false);
     setRememberCategories(true);
     setLoading(false);
   };
@@ -223,13 +228,13 @@ export function FinancialStatementImportDialog({
           method: "POST",
           body: JSON.stringify({
             fileHash: selectedPreview.hash,
-            allowPossibleDuplicates: allowDuplicates,
             rememberCategories,
             rows: includedRows.map((row) => ({
               sourceRow: row.sourceRow,
               kind: row.kind,
               description: row.description.trim(),
-              categoryId: row.categoryId,
+              categoryId: row.categoryId || null,
+              possibleDuplicate: row.possibleDuplicate,
               actualDate: toIsoDate(row.actualDate),
               actualAmount: Number(String(row.amount).replace(",", ".")),
             })),
@@ -258,38 +263,6 @@ export function FinancialStatementImportDialog({
           ? caught.message
           : "Não foi possível concluir a importação.";
       toast.error(message);
-      if (message.startsWith("Há possíveis duplicidades.")) {
-        try {
-          const refreshed = await postPreview(selectedFile);
-          if (
-            generation !== requestGeneration.current ||
-            selectedFile !== file ||
-            selectedPreview !== preview
-          )
-            return;
-          setReviewRows((rows) =>
-            rows.map((row) => {
-              const fresh = (
-                refreshed.rows as Array<
-                  ParsedStatementRow & {
-                    alreadyImported?: boolean;
-                    possibleDuplicate: boolean;
-                  }
-                >
-              ).find((item) => item.sourceRow === row.sourceRow);
-              return fresh
-                ? {
-                    ...row,
-                    possibleDuplicate: fresh.possibleDuplicate,
-                    alreadyImported: fresh.alreadyImported,
-                  }
-                : row;
-            }),
-          );
-        } catch {
-          /* The original confirmation error remains actionable. */
-        }
-      }
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
     }
@@ -407,7 +380,7 @@ export function FinancialStatementImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {reviewRows.map((row) => {
+                    {rowsForReview.map((row) => {
                       const rowErrors = [...row.errors];
                       if (row.included && !row.categoryId)
                         rowErrors.push("Escolha uma categoria.");
@@ -532,28 +505,11 @@ export function FinancialStatementImportDialog({
                             />
                           </td>
                           <td className="break-words p-2 text-xs">
-                            {row.alreadyImported && (
-                              <p className="mb-1 text-muted-foreground">
-                                Este arquivo já foi importado; a linha será
-                                ignorada.
-                              </p>
-                            )}
-                            {row.possibleDuplicate && (
-                              <p className="mb-1 flex items-center gap-1 text-amber-700">
-                                <AlertTriangle className="size-3" />
-                                Possível duplicidade
-                              </p>
-                            )}
                             {rowErrors.map((message) => (
                               <p key={message} className="text-destructive">
                                 {message}
                               </p>
                             ))}
-                            {row.possibleDuplicate && !rowErrors.length && (
-                              <p className="text-muted-foreground">
-                                Confira antes de importar.
-                              </p>
-                            )}
                           </td>
                         </tr>
                       );
@@ -562,7 +518,7 @@ export function FinancialStatementImportDialog({
                 </table>
               </div>
               <div className="max-h-[42vh] space-y-3 overflow-y-auto overflow-x-hidden lg:hidden">
-                {reviewRows.map((row) => {
+                {rowsForReview.map((row) => {
                   const rowErrors = [...row.errors];
                   if (row.included && !row.categoryId)
                     rowErrors.push("Escolha uma categoria.");
@@ -588,17 +544,6 @@ export function FinancialStatementImportDialog({
                           Linha {row.sourceRow}
                         </p>
                       </div>
-                      {row.alreadyImported && (
-                        <p className="text-xs text-muted-foreground">
-                          Este arquivo já foi importado; a linha será ignorada.
-                        </p>
-                      )}
-                      {row.possibleDuplicate && (
-                        <p className="flex items-center gap-1 text-xs text-amber-700">
-                          <AlertTriangle className="size-3 shrink-0" />
-                          Possível duplicidade. Confira antes de importar.
-                        </p>
-                      )}
                       <label className="block space-y-1 text-xs text-muted-foreground">
                         Descrição
                         <Input
@@ -740,18 +685,11 @@ export function FinancialStatementImportDialog({
                 </span>
               </label>
               {duplicateCount > 0 && (
-                <label className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-                  <Checkbox
-                    checked={allowDuplicates}
-                    onCheckedChange={(checked) =>
-                      setAllowDuplicates(checked === true)
-                    }
-                  />
-                  <span>
-                    Revisei {duplicateCount} possível(is) duplicidade(s) e quero
-                    importar mesmo assim.
-                  </span>
-                </label>
+                <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  {duplicateCount === 1
+                    ? "1 lançamento repetido será ignorado automaticamente."
+                    : `${duplicateCount} lançamentos repetidos serão ignorados automaticamente.`}
+                </p>
               )}
             </section>
           )}
@@ -768,12 +706,7 @@ export function FinancialStatementImportDialog({
             <Button
               type="button"
               onClick={() => void confirm(file!, preview!)}
-              disabled={
-                loading ||
-                includedRows.length === 0 ||
-                invalidIncluded ||
-                (duplicateCount > 0 && !allowDuplicates)
-              }
+              disabled={loading || includedRows.length === 0 || invalidIncluded}
             >
               Confirmar importação
             </Button>

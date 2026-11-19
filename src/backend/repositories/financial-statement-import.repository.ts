@@ -10,6 +10,7 @@ import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
 import type { StatementConfirmInput } from "@/backend/schemas/financial-statement-import.schema";
 import type { FinancialKind } from "@/backend/schemas/financial.schema";
+import { ApplicationError } from "@/backend/errors/application-error";
 
 export function normalizeStatementDescription(value: string) {
   return value.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
@@ -104,25 +105,70 @@ export class FinancialStatementImportRepository {
           inArray(financialEntries.actualDate, dates),
         ),
       );
-    const keys = new Set(
-      existing.map((row) =>
-        duplicateKey({
-          kind: row.kind,
-          description: row.description,
-          actualDate: row.actualDate!,
-          actualAmount: row.actualAmount!,
-        }),
-      ),
-    );
-    return rows
-      .filter((row) => keys.has(duplicateKey(row)))
-      .map((row) => row.sourceRow);
+    const remaining = new Map<string, number>();
+    for (const row of existing) {
+      const key = duplicateKey({
+        kind: row.kind,
+        description: row.description,
+        actualDate: row.actualDate!,
+        actualAmount: row.actualAmount!,
+      });
+      remaining.set(key, (remaining.get(key) ?? 0) + 1);
+    }
+    const duplicates: number[] = [];
+    for (const row of rows) {
+      const key = duplicateKey(row);
+      const count = remaining.get(key) ?? 0;
+      if (count === 0) continue;
+      duplicates.push(row.sourceRow);
+      remaining.set(key, count - 1);
+    }
+    return duplicates;
   }
 
   async confirm(input: StatementConfirmInput) {
     const userId = requireDataOwnerId();
     const database = getDatabaseClient();
     return database.transaction(async (transaction) => {
+      await financialMonthCloseRepository.acquireFinancialWriteLock(
+        transaction,
+        userId,
+      );
+      const months = [
+        ...new Set(input.rows.map((row) => row.actualDate.slice(0, 7))),
+      ];
+      await financialMonthCloseRepository.acquireMonthLocks(
+        transaction,
+        userId,
+        months,
+      );
+      const dates = [...new Set(input.rows.map((row) => row.actualDate))];
+      const existingEntries = dates.length
+        ? await transaction
+            .select({
+              kind: financialEntries.kind,
+              description: financialEntries.description,
+              actualDate: financialEntries.actualDate,
+              actualAmount: financialEntries.actualAmount,
+            })
+            .from(financialEntries)
+            .where(
+              and(
+                eq(financialEntries.userId, userId),
+                inArray(financialEntries.actualDate, dates),
+              ),
+            )
+        : [];
+      const duplicateCounts = new Map<string, number>();
+      for (const entry of existingEntries) {
+        const key = duplicateKey({
+          kind: entry.kind,
+          description: entry.description,
+          actualDate: entry.actualDate!,
+          actualAmount: entry.actualAmount!,
+        });
+        duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+      }
       const [existingImport] = await transaction
         .select({ id: financialStatementImports.id })
         .from(financialStatementImports)
@@ -157,7 +203,11 @@ export class FinancialStatementImportRepository {
 
       let importedCount = 0;
       let alreadyImportedCount = 0;
+      let duplicateCount = 0;
       const importedDates: string[] = [];
+      const rememberedRows: Array<
+        StatementConfirmInput["rows"][number] & { categoryId: string }
+      > = [];
       for (const row of input.rows) {
         const [reservedRow] = await transaction
           .insert(financialStatementImportRows)
@@ -172,13 +222,31 @@ export class FinancialStatementImportRepository {
           alreadyImportedCount += 1;
           continue;
         }
+        const key = duplicateKey(row);
+        const existingCount = duplicateCounts.get(key) ?? 0;
+        if (existingCount > 0) {
+          duplicateCounts.set(key, existingCount - 1);
+          duplicateCount += 1;
+          continue;
+        }
+        if (row.possibleDuplicate)
+          throw new ApplicationError(
+            "Os lançamentos repetidos mudaram desde a revisão. Confira o extrato novamente.",
+            409,
+          );
+        const categoryId = row.categoryId;
+        if (!categoryId)
+          throw new ApplicationError(
+            "Escolha uma categoria para cada lançamento novo.",
+            400,
+          );
         const [entry] = await transaction
           .insert(financialEntries)
           .values({
             userId,
             kind: row.kind,
             description: row.description,
-            categoryId: row.categoryId,
+            categoryId,
             recurrenceId: null,
             expectedAmount: null,
             expectedDate: null,
@@ -193,10 +261,11 @@ export class FinancialStatementImportRepository {
           .set({ entryId: entry.id })
           .where(eq(financialStatementImportRows.id, reservedRow.id));
         importedDates.push(row.actualDate);
+        rememberedRows.push({ ...row, categoryId });
         importedCount += 1;
       }
       if (input.rememberCategories) {
-        const choices = input.rows.map((row) => ({
+        const choices = rememberedRows.map((row) => ({
           userId,
           kind: row.kind,
           descriptionKey: normalizeStatementDescription(row.description),
@@ -225,7 +294,7 @@ export class FinancialStatementImportRepository {
         userId,
         importedDates,
       );
-      return { importedCount, alreadyImportedCount };
+      return { importedCount, alreadyImportedCount, duplicateCount };
     });
   }
 }
