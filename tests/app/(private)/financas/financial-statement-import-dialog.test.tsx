@@ -90,55 +90,36 @@ afterEach(() => {
 });
 
 describe("FinancialStatementImportDialog", () => {
-  it("shows an automatic category suggestion and the review counts", async () => {
-    const user = userEvent.setup();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "d".repeat(64),
-            headers: ["Data", "Descrição", "Valor"],
-            mapping: null,
-            rows: [
-              {
-                sourceRow: 2,
-                values: ["14/11/2026", "Aplicação CDB Porquinho", "-2000"],
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "d".repeat(64),
-            headers: ["Data", "Descrição", "Valor"],
-            mapping: {
-              dateColumn: 0,
-              descriptionColumn: 1,
-              amountColumn: 2,
-              dateFormat: "DMY",
-              decimalSeparator: "COMMA",
+  it("shows review counts without cluttering rows with helper text", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          hash: "d".repeat(64),
+          headers: ["Data", "Descrição", "Valor"],
+          mapping: {
+            dateColumn: 0,
+            descriptionColumn: 1,
+            amountColumn: 2,
+            dateFormat: "DMY",
+            decimalSeparator: "COMMA",
+          },
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Aplicação CDB Porquinho",
+              actualDate: "2026-11-14",
+              amount: 2000,
+              errors: [],
+              categoryId: categories[2].id,
+              categorySource: "suggested",
+              possibleDuplicate: false,
             },
-            rows: [
-              {
-                sourceRow: 2,
-                kind: "EXPENSE",
-                description: "Aplicação CDB Porquinho",
-                actualDate: "2026-11-14",
-                amount: 2000,
-                errors: [],
-                categoryId: categories[2].id,
-                categorySource: "suggested",
-                possibleDuplicate: false,
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      );
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     render(
       <FinancialStatementImportDialog
@@ -157,69 +138,115 @@ describe("FinancialStatementImportDialog", () => {
         },
       },
     );
-    await screen.findByText("Como identificar as colunas?");
-    await user.click(screen.getByRole("button", { name: "Montar prévia" }));
+    await screen.findAllByLabelText("Descrição da linha 2");
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "1 classificada automaticamente · 0 pendentes",
+    );
+    expect(screen.queryByText("Alterar colunas")).toBeNull();
+    expect(screen.queryByText("Sugestão automática — confira")).toBeNull();
+    expect(screen.queryByText(/Descrições iguais/)).toBeNull();
+    expect(
+      screen.queryByText(/O arquivo é processado para criar a prévia/),
+    ).toBeNull();
+    expect(
+      screen.queryByText(/contar as mesmas despesas duas vezes/),
+    ).toBeNull();
+  });
+
+  it("shows the card double-count warning only when purchases and a bill payment appear", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          hash: "e".repeat(64),
+          headers: ["Data", "Descrição", "Valor"],
+          mapping: {
+            dateColumn: 0,
+            descriptionColumn: 1,
+            amountColumn: 2,
+            dateFormat: "DMY",
+            decimalSeparator: "COMMA",
+          },
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Compra no crédito: mercado",
+              actualDate: "2026-11-14",
+              amount: 10,
+              errors: [],
+              categoryId: categories[0].id,
+              possibleDuplicate: false,
+            },
+            {
+              sourceRow: 3,
+              kind: "EXPENSE",
+              description: "Pagamento fatura cartão",
+              actualDate: "2026-11-14",
+              amount: 10,
+              errors: [],
+              categoryId: categories[0].id,
+              possibleDuplicate: false,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["synthetic"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
 
     expect(
-      (await screen.findAllByText("Sugestão automática — confira")).length,
-    ).toBe(2);
-    expect(
-      screen.getByText(/1 classificada automaticamente · 0 pendentes/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Descrições iguais e com o mesmo tipo recebem a categoria juntas.",
+      await screen.findByText(
+        "O arquivo contém compras no cartão e pagamento de fatura. Revise para não contar as mesmas despesas duas vezes.",
       ),
     ).toBeTruthy();
   });
 
   it("maps an Inter-like statement, reviews categories, and confirms only after review", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "a".repeat(64),
-            headers: ["Data Lançamento", "Descrição", "Valor", "Saldo"],
-            mapping: null,
-            rows: [
-              {
-                sourceRow: 7,
-                values: ["14/11/2026", "Mercado", "-10,50", "90,00"],
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "a".repeat(64),
-            headers: ["Data Lançamento", "Descrição", "Valor", "Saldo"],
-            mapping: {
-              dateColumn: 0,
-              descriptionColumn: 1,
-              amountColumn: 2,
-              dateFormat: "DMY",
-              decimalSeparator: "COMMA",
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          hash: "a".repeat(64),
+          headers: ["Data Lançamento", "Descrição", "Valor", "Saldo"],
+          mapping: {
+            dateColumn: 0,
+            descriptionColumn: 1,
+            amountColumn: 2,
+            dateFormat: "DMY",
+            decimalSeparator: "COMMA",
+          },
+          rows: [
+            {
+              sourceRow: 7,
+              kind: "EXPENSE",
+              description: "Mercado",
+              actualDate: "2026-11-14",
+              amount: 10.5,
+              errors: [],
+              possibleDuplicate: false,
             },
-            rows: [
-              {
-                sourceRow: 7,
-                kind: "EXPENSE",
-                description: "Mercado",
-                actualDate: "2026-11-14",
-                amount: 10.5,
-                errors: [],
-                possibleDuplicate: false,
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      );
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     api.request.mockResolvedValue({
       importedCount: 1,
@@ -242,14 +269,14 @@ describe("FinancialStatementImportDialog", () => {
       screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
       { target: { files: [file] } },
     );
-    await screen.findByText("Como identificar as colunas?");
-    const previewButton = screen.getByRole("button", { name: "Montar prévia" });
-    expect(previewButton.hasAttribute("disabled")).toBe(false);
-    await user.click(previewButton);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await screen.findAllByRole("textbox", { name: "Descrição da linha 7" });
     expect(firstMatch(screen.getAllByDisplayValue("Mercado"))).toBeTruthy();
+    expect(firstMatch(screen.getAllByDisplayValue("14/11/2026"))).toBeTruthy();
     expect(api.request).not.toHaveBeenCalled();
+    fireEvent.change(firstMatch(screen.getAllByLabelText("Data da linha 7")), {
+      target: { value: "15112026" },
+    });
+    expect(firstMatch(screen.getAllByDisplayValue("15/11/2026"))).toBeTruthy();
 
     await user.click(
       firstMatch(
@@ -269,7 +296,11 @@ describe("FinancialStatementImportDialog", () => {
         expect.objectContaining({ method: "POST" }),
       ),
     );
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+      rows: Array<{ actualDate: string }>;
+    };
+    expect(confirmation.rows[0]?.actualDate).toBe("2026-11-15");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("requires explicit acknowledgement before importing possible duplicates", async () => {
@@ -393,76 +424,58 @@ describe("FinancialStatementImportDialog", () => {
 
   it("applies a category to exact same-description rows and can opt out of remembering", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "c".repeat(64),
-            headers: ["Data", "Descrição", "Valor"],
-            mapping: null,
-            rows: [
-              {
-                sourceRow: 2,
-                values: ["14/11/2026", "Mercado do Bairro", "-10,00"],
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            hash: "c".repeat(64),
-            headers: ["Data", "Descrição", "Valor"],
-            mapping: {
-              dateColumn: 0,
-              descriptionColumn: 1,
-              amountColumn: 2,
-              dateFormat: "DMY",
-              decimalSeparator: "COMMA",
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          hash: "c".repeat(64),
+          headers: ["Data", "Descrição", "Valor"],
+          mapping: {
+            dateColumn: 0,
+            descriptionColumn: 1,
+            amountColumn: 2,
+            dateFormat: "DMY",
+            decimalSeparator: "COMMA",
+          },
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Mercado do Bairro",
+              actualDate: "2026-11-14",
+              amount: 10,
+              errors: [],
+              categoryId: categories[0].id,
+              categorySource: "saved",
             },
-            rows: [
-              {
-                sourceRow: 2,
-                kind: "EXPENSE",
-                description: "Mercado do Bairro",
-                actualDate: "2026-11-14",
-                amount: 10,
-                errors: [],
-                categoryId: categories[0].id,
-                categorySource: "saved",
-              },
-              {
-                sourceRow: 3,
-                kind: "EXPENSE",
-                description: " mercado   do bairro ",
-                actualDate: "2026-11-14",
-                amount: 20,
-                errors: [],
-              },
-              {
-                sourceRow: 4,
-                kind: "INCOME",
-                description: "Mercado do Bairro",
-                actualDate: "2026-11-14",
-                amount: 30,
-                errors: [],
-              },
-              {
-                sourceRow: 5,
-                kind: "EXPENSE",
-                description: "Padaria da Esquina",
-                actualDate: "2026-11-14",
-                amount: 12,
-                errors: [],
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      );
+            {
+              sourceRow: 3,
+              kind: "EXPENSE",
+              description: " mercado   do bairro ",
+              actualDate: "2026-11-14",
+              amount: 20,
+              errors: [],
+            },
+            {
+              sourceRow: 4,
+              kind: "INCOME",
+              description: "Mercado do Bairro",
+              actualDate: "2026-11-14",
+              amount: 30,
+              errors: [],
+            },
+            {
+              sourceRow: 5,
+              kind: "EXPENSE",
+              description: "Padaria da Esquina",
+              actualDate: "2026-11-14",
+              amount: 12,
+              errors: [],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     api.request.mockResolvedValue({
       importedCount: 3,
@@ -485,14 +498,10 @@ describe("FinancialStatementImportDialog", () => {
         },
       },
     );
-    await screen.findByText("Como identificar as colunas?");
-    await user.click(
-      await screen.findByRole("button", { name: "Montar prévia" }),
+    await screen.findAllByRole("combobox", { name: "Categoria da linha 2" });
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "1 classificada automaticamente · 3 pendentes",
     );
-    await screen.findAllByText("Categoria da sua escolha anterior");
-    expect(
-      screen.getByText(/1 classificada automaticamente · 3 pendentes/),
-    ).toBeTruthy();
 
     await user.click(
       firstMatch(
@@ -534,7 +543,7 @@ describe("FinancialStatementImportDialog", () => {
     );
     await user.click(
       screen.getByRole("checkbox", {
-        name: /Lembrar estas categorias nos próximos extratos/,
+        name: /Lembrar minhas categorias para próximos extratos/,
       }),
     );
     await user.click(

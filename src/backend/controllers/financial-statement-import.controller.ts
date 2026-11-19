@@ -18,25 +18,14 @@ export class FinancialStatementImportController {
     if (file.size > 5 * 1024 * 1024) {
       throw new ApplicationError("O arquivo deve ter até 5 MB.", 413);
     }
-    const mappingValue = form.get("mapping");
-    let mapping: unknown;
-    if (mappingValue !== null) {
-      if (typeof mappingValue !== "string")
-        throw new ApplicationError("Revise o mapeamento das colunas.", 400);
-      try {
-        mapping = JSON.parse(mappingValue);
-      } catch {
-        throw new ApplicationError("Revise o mapeamento das colunas.", 400);
-      }
-    }
-    const result = await financialStatementImportService.preview(
-      { name: file.name, buffer: Buffer.from(await file.arrayBuffer()) },
-      mapping,
-    );
+    const result = await financialStatementImportService.preview({
+      name: file.name,
+      buffer: Buffer.from(await file.arrayBuffer()),
+    });
     logger.info("financial_statement_preview_completed", {
       requestId,
       rows: result.rows.length,
-      mapped: result.mapping !== null,
+      mapped: true,
     });
     return Response.json(result);
   }

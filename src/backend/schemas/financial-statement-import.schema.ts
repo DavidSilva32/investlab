@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-const columnIndex = z.number().int().min(0).max(199);
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const date = z
   .string()
@@ -11,43 +10,6 @@ const date = z
       !Number.isNaN(parsed.getTime()) &&
       parsed.toISOString().slice(0, 10) === value
     );
-  });
-
-export const statementMappingSchema = z
-  .object({
-    dateColumn: columnIndex,
-    descriptionColumn: columnIndex,
-    amountColumn: columnIndex.optional(),
-    debitColumn: columnIndex.optional(),
-    creditColumn: columnIndex.optional(),
-    dateFormat: z.enum(["DMY", "MDY", "ISO"]),
-    decimalSeparator: z.enum(["COMMA", "DOT"]),
-  })
-  .strict()
-  .superRefine((mapping, context) => {
-    const signed = mapping.amountColumn !== undefined;
-    const separate =
-      mapping.debitColumn !== undefined && mapping.creditColumn !== undefined;
-    if (signed === separate) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "Selecione uma coluna de valor ou as colunas de débito e crédito.",
-      });
-    }
-    const columns = [
-      mapping.dateColumn,
-      mapping.descriptionColumn,
-      mapping.amountColumn,
-      mapping.debitColumn,
-      mapping.creditColumn,
-    ].filter((value): value is number => value !== undefined);
-    if (new Set(columns).size !== columns.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Cada informação deve usar uma coluna diferente.",
-      });
-    }
   });
 
 export const statementConfirmSchema = z
@@ -87,5 +49,4 @@ export const statementConfirmSchema = z
     }
   });
 
-export type StatementMapping = z.infer<typeof statementMappingSchema>;
 export type StatementConfirmInput = z.infer<typeof statementConfirmSchema>;

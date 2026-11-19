@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, FileSpreadsheet, Upload } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,11 +22,7 @@ import {
 import { getApiMessage } from "@/lib/api-message";
 import { apiRequest } from "@/lib/api-client";
 import { toast } from "sonner";
-import type {
-  ParsedStatementRow,
-  StatementColumnMapping,
-  StatementRawRow,
-} from "@/backend/services/financial-statement-import-parser";
+import type { ParsedStatementRow } from "@/backend/services/financial-statement-import-parser";
 
 type Kind = "INCOME" | "EXPENSE";
 type Category = {
@@ -38,18 +33,14 @@ type Category = {
 };
 type PreviewResponse = {
   hash: string;
-  headers: string[];
-  mapping: StatementColumnMapping | null;
-  rows:
-    | StatementRawRow[]
-    | Array<
-        ParsedStatementRow & {
-          alreadyImported?: boolean;
-          categoryId?: string | null;
-          categorySource?: "saved" | "suggested" | null;
-          possibleDuplicate: boolean;
-        }
-      >;
+  rows: Array<
+    ParsedStatementRow & {
+      alreadyImported?: boolean;
+      categoryId?: string | null;
+      categorySource?: "saved" | "suggested" | null;
+      possibleDuplicate: boolean;
+    }
+  >;
 };
 type ReviewRow = ParsedStatementRow & {
   alreadyImported?: boolean;
@@ -58,113 +49,52 @@ type ReviewRow = ParsedStatementRow & {
   categorySource?: "saved" | "suggested";
   included: boolean;
 };
-type MappingForm = {
-  dateColumn: string;
-  descriptionColumn: string;
-  mode: "SIGNED" | "SEPARATE";
-  amountColumn: string;
-  debitColumn: string;
-  creditColumn: string;
-  dateFormat: StatementColumnMapping["dateFormat"];
-  decimalSeparator: StatementColumnMapping["decimalSeparator"];
-};
-
-function suggestedIndex(headers: string[], tokens: string[]) {
-  return String(
-    headers.findIndex((header) =>
-      tokens.some((token) => header.toLocaleLowerCase("pt-BR").includes(token)),
-    ),
-  );
-}
-
-function initialMapping(headers: string[]): MappingForm {
-  const dateColumn = suggestedIndex(headers, ["data", "date"]);
-  const descriptionColumn = suggestedIndex(headers, [
-    "descri",
-    "histórico",
-    "historico",
-    "description",
-    "memo",
-  ]);
-  const amountColumn = suggestedIndex(headers, ["valor", "amount", "montante"]);
-  const debitColumn = suggestedIndex(headers, ["débito", "debito", "debit"]);
-  const creditColumn = suggestedIndex(headers, [
-    "crédito",
-    "credito",
-    "credit",
-  ]);
-  const separate =
-    debitColumn !== "-1" && creditColumn !== "-1" && amountColumn === "-1";
-  return {
-    dateColumn: dateColumn === "-1" ? "" : dateColumn,
-    descriptionColumn: descriptionColumn === "-1" ? "" : descriptionColumn,
-    mode: separate ? "SEPARATE" : "SIGNED",
-    amountColumn: amountColumn === "-1" ? "" : amountColumn,
-    debitColumn: debitColumn === "-1" ? "" : debitColumn,
-    creditColumn: creditColumn === "-1" ? "" : creditColumn,
-    dateFormat: "DMY",
-    decimalSeparator: "COMMA",
-  };
-}
-
-function mapPayload(mapping: MappingForm): StatementColumnMapping | null {
-  if (mapping.dateColumn === "" || mapping.descriptionColumn === "")
-    return null;
-  const distinct = (values: string[]) => new Set(values).size === values.length;
-  if (mapping.mode === "SIGNED" && mapping.amountColumn !== "") {
-    if (
-      !distinct([
-        mapping.dateColumn,
-        mapping.descriptionColumn,
-        mapping.amountColumn,
-      ])
-    )
-      return null;
-    return {
-      dateColumn: Number(mapping.dateColumn),
-      descriptionColumn: Number(mapping.descriptionColumn),
-      amountColumn: Number(mapping.amountColumn),
-      dateFormat: mapping.dateFormat,
-      decimalSeparator: mapping.decimalSeparator,
-    };
-  }
-  if (
-    mapping.mode === "SEPARATE" &&
-    mapping.debitColumn !== "" &&
-    mapping.creditColumn !== ""
-  ) {
-    if (
-      !distinct([
-        mapping.dateColumn,
-        mapping.descriptionColumn,
-        mapping.debitColumn,
-        mapping.creditColumn,
-      ])
-    )
-      return null;
-    return {
-      dateColumn: Number(mapping.dateColumn),
-      descriptionColumn: Number(mapping.descriptionColumn),
-      debitColumn: Number(mapping.debitColumn),
-      creditColumn: Number(mapping.creditColumn),
-      dateFormat: mapping.dateFormat,
-      decimalSeparator: mapping.decimalSeparator,
-    };
-  }
-  return null;
-}
-
 function toIsoDate(value: string | null) {
   if (!value) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (iso) {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) &&
+      date.toISOString().slice(0, 10) === value
+      ? value
+      : null;
+  }
   const parts = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
-  return parts ? `${parts[3]}-${parts[2]}-${parts[1]}` : null;
+  if (!parts) return null;
+  const day = Number(parts[1]);
+  const month = Number(parts[2]);
+  const year = Number(parts[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+    ? `${parts[3]}-${parts[2]}-${parts[1]}`
+    : null;
 }
 
-async function postPreview(file: File, mapping?: StatementColumnMapping) {
+function formatDateForDisplay(value: string | null) {
+  if (!value) return "";
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : value;
+}
+
+function applyDateMask(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function normalizeDescriptionForMatch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleUpperCase("pt-BR");
+}
+
+async function postPreview(file: File) {
   const form = new FormData();
   form.set("file", file);
-  if (mapping) form.set("mapping", JSON.stringify(mapping));
   const response = await fetch("/api/financial-statement-import/preview", {
     method: "POST",
     body: form,
@@ -194,7 +124,6 @@ export function FinancialStatementImportDialog({
   const requestGeneration = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
-  const [mapping, setMapping] = useState<MappingForm | null>(null);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [rememberCategories, setRememberCategories] = useState(true);
@@ -224,12 +153,22 @@ export function FinancialStatementImportDialog({
     (row) => row.kind && !row.categoryId,
   ).length;
   const activeCategories = categories.filter((category) => category.active);
+  const hasCardPaymentOverlap =
+    reviewRows.some((row) =>
+      /\b(?:PAGAMENTO (?:DA )?FATURA|FATURA (?:DO )?CARTAO)\b/.test(
+        normalizeDescriptionForMatch(row.description),
+      ),
+    ) &&
+    reviewRows.some((row) =>
+      /\b(?:COMPRA (?:NO|COM) CARTAO|COMPRA NO CREDITO)\b/.test(
+        normalizeDescriptionForMatch(row.description),
+      ),
+    );
 
   const reset = () => {
     requestGeneration.current += 1;
     setFile(null);
     setPreview(null);
-    setMapping(null);
     setReviewRows([]);
     setAllowDuplicates(false);
     setRememberCategories(true);
@@ -252,87 +191,8 @@ export function FinancialStatementImportDialog({
       const result = await postPreview(selected);
       if (generation !== requestGeneration.current) return;
       setPreview(result);
-      if (result.mapping && result.rows.length && "errors" in result.rows[0]) {
-        setReviewRows(
-          (
-            result.rows as Array<
-              ParsedStatementRow & {
-                alreadyImported?: boolean;
-                categoryId?: string | null;
-                categorySource?: "saved" | "suggested" | null;
-                possibleDuplicate: boolean;
-              }
-            >
-          ).map((row) => ({
-            ...row,
-            categoryId: row.categoryId ?? "",
-            categorySource: row.categorySource ?? undefined,
-            included: row.errors.length === 0,
-          })),
-        );
-        setMapping({
-          ...initialMapping(result.headers),
-          dateColumn: String(result.mapping.dateColumn),
-          descriptionColumn: String(result.mapping.descriptionColumn),
-          mode:
-            result.mapping.amountColumn !== undefined ? "SIGNED" : "SEPARATE",
-          amountColumn:
-            result.mapping.amountColumn === undefined
-              ? ""
-              : String(result.mapping.amountColumn),
-          debitColumn:
-            result.mapping.debitColumn === undefined
-              ? ""
-              : String(result.mapping.debitColumn),
-          creditColumn:
-            result.mapping.creditColumn === undefined
-              ? ""
-              : String(result.mapping.creditColumn),
-          dateFormat: result.mapping.dateFormat,
-          decimalSeparator: result.mapping.decimalSeparator,
-        });
-      } else {
-        setMapping(initialMapping(result.headers));
-      }
-    } catch (caught) {
-      if (generation !== requestGeneration.current) return;
-      toast.error(
-        caught instanceof Error
-          ? caught.message
-          : "Não foi possível ler o extrato.",
-      );
-    } finally {
-      if (generation === requestGeneration.current) setLoading(false);
-    }
-  };
-
-  const analyze = async () => {
-    if (!open || !file || !preview || !mapping) return;
-    const selectedFile = file;
-    const generation = ++requestGeneration.current;
-    const payload = mapPayload(mapping);
-    if (!payload) {
-      setError("Selecione as colunas de data, descrição e valor.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setAllowDuplicates(false);
-    try {
-      const result = await postPreview(selectedFile, payload);
-      if (generation !== requestGeneration.current) return;
-      setPreview(result);
       setReviewRows(
-        (
-          result.rows as Array<
-            ParsedStatementRow & {
-              alreadyImported?: boolean;
-              categoryId?: string | null;
-              categorySource?: "saved" | "suggested" | null;
-              possibleDuplicate: boolean;
-            }
-          >
-        ).map((row) => ({
+        result.rows.map((row) => ({
           ...row,
           categoryId: row.categoryId ?? "",
           categorySource: row.categorySource ?? undefined,
@@ -344,7 +204,7 @@ export function FinancialStatementImportDialog({
       toast.error(
         caught instanceof Error
           ? caught.message
-          : "Não foi possível preparar a prévia.",
+          : "Não foi possível ler o extrato.",
       );
     } finally {
       if (generation === requestGeneration.current) setLoading(false);
@@ -407,10 +267,9 @@ export function FinancialStatementImportDialog({
           ? caught.message
           : "Não foi possível concluir a importação.";
       toast.error(message);
-      const payload = mapping ? mapPayload(mapping) : null;
-      if (message.startsWith("Há possíveis duplicidades.") && payload) {
+      if (message.startsWith("Há possíveis duplicidades.")) {
         try {
-          const refreshed = await postPreview(selectedFile, payload);
+          const refreshed = await postPreview(selectedFile);
           if (
             generation !== requestGeneration.current ||
             selectedFile !== file ||
@@ -476,35 +335,21 @@ export function FinancialStatementImportDialog({
           : row,
       );
     });
-  const options =
-    preview?.headers.map((header, index) => ({
-      value: String(index),
-      label: header,
-    })) ?? [];
-  const columnSelect = (
-    value: string,
-    onChange: (value: string) => void,
-    label: string,
-    allowEmpty = false,
-  ) => (
-    <Select
-      value={value || (allowEmpty ? "-1" : undefined)}
-      onValueChange={(selected) => onChange(selected === "-1" ? "" : selected)}
-    >
-      <SelectTrigger aria-label={label}>
-        <SelectValue placeholder="Selecione uma coluna" />
-      </SelectTrigger>
-      <SelectContent>
-        {allowEmpty && <SelectItem value="-1">Selecione uma coluna</SelectItem>}
-        {options.map((option) => (
-          <SelectItem key={`${label}-${option.value}`} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-
+  const updateDate = (sourceRow: number, value: string) => {
+    const actualDate = applyDateMask(value);
+    const current = reviewRows.find((row) => row.sourceRow === sourceRow);
+    if (!current) return;
+    const dateError = "Confira a data informada.";
+    updateRow(sourceRow, {
+      actualDate,
+      errors: [
+        ...current.errors.filter(
+          (message) => !message.startsWith("Confira a data"),
+        ),
+        ...(toIsoDate(actualDate) ? [] : [dateError]),
+      ],
+    });
+  };
   return (
     <Dialog
       open={open}
@@ -516,10 +361,6 @@ export function FinancialStatementImportDialog({
       <DialogContent className="box-border max-h-[min(92dvh,56rem)] w-[calc(100vw-2rem)] min-w-0 max-w-6xl overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Importar extrato</DialogTitle>
-          <DialogDescription>
-            Confira as colunas e revise cada lançamento antes de adicionar ao
-            seu fluxo financeiro.
-          </DialogDescription>
         </DialogHeader>
         <div className="min-w-0 space-y-4">
           <label className="flex min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 text-sm hover:bg-muted/40 sm:flex-nowrap sm:p-4">
@@ -541,12 +382,6 @@ export function FinancialStatementImportDialog({
               Selecionar arquivo
             </span>
           </label>
-          <p className="text-xs text-muted-foreground">
-            O arquivo é processado para criar a prévia e não é guardado. Só os
-            lançamentos confirmados, uma referência técnica para evitar
-            reimportação e, se você mantiver a opção ativa, suas escolhas de
-            categoria são salvos.
-          </p>
           {loading && (
             <p role="status" className="text-sm text-muted-foreground">
               Lendo e conferindo o arquivo…
@@ -560,125 +395,6 @@ export function FinancialStatementImportDialog({
               {error}
             </p>
           )}
-          {preview && reviewRows.length === 0 && mapping && (
-            <section className="grid gap-3 rounded-lg border p-4 md:grid-cols-2">
-              <h3 className="md:col-span-2 font-medium">
-                Como identificar as colunas?
-              </h3>
-              <label className="space-y-1 text-sm">
-                Data{" "}
-                {columnSelect(
-                  mapping.dateColumn,
-                  (value) => setMapping({ ...mapping, dateColumn: value }),
-                  "Coluna de data",
-                )}
-              </label>
-              <label className="space-y-1 text-sm">
-                Descrição{" "}
-                {columnSelect(
-                  mapping.descriptionColumn,
-                  (value) =>
-                    setMapping({ ...mapping, descriptionColumn: value }),
-                  "Coluna de descrição",
-                )}
-              </label>
-              <label className="space-y-1 text-sm">
-                Formato de data
-                <Select
-                  value={mapping.dateFormat}
-                  onValueChange={(
-                    value: StatementColumnMapping["dateFormat"],
-                  ) => setMapping({ ...mapping, dateFormat: value })}
-                >
-                  <SelectTrigger aria-label="Formato de data">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DMY">Dia/mês/ano</SelectItem>
-                    <SelectItem value="MDY">Mês/dia/ano</SelectItem>
-                    <SelectItem value="ISO">Ano-mês-dia</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1 text-sm">
-                Separador decimal
-                <Select
-                  value={mapping.decimalSeparator}
-                  onValueChange={(
-                    value: StatementColumnMapping["decimalSeparator"],
-                  ) => setMapping({ ...mapping, decimalSeparator: value })}
-                >
-                  <SelectTrigger aria-label="Separador decimal">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="COMMA">Vírgula (1.234,56)</SelectItem>
-                    <SelectItem value="DOT">Ponto (1,234.56)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              <label className="space-y-1 text-sm md:col-span-2">
-                Formato dos valores
-                <Select
-                  value={mapping.mode}
-                  onValueChange={(value: MappingForm["mode"]) =>
-                    setMapping({ ...mapping, mode: value })
-                  }
-                >
-                  <SelectTrigger aria-label="Formato dos valores">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SIGNED">
-                      Uma coluna com valores positivos e negativos
-                    </SelectItem>
-                    <SelectItem value="SEPARATE">
-                      Colunas separadas de débito e crédito
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </label>
-              {mapping.mode === "SIGNED" ? (
-                <label className="space-y-1 text-sm md:col-span-2">
-                  Valor{" "}
-                  {columnSelect(
-                    mapping.amountColumn,
-                    (value) => setMapping({ ...mapping, amountColumn: value }),
-                    "Coluna de valor",
-                  )}
-                </label>
-              ) : (
-                <>
-                  <label className="space-y-1 text-sm">
-                    Débito{" "}
-                    {columnSelect(
-                      mapping.debitColumn,
-                      (value) => setMapping({ ...mapping, debitColumn: value }),
-                      "Coluna de débito",
-                    )}
-                  </label>
-                  <label className="space-y-1 text-sm">
-                    Crédito{" "}
-                    {columnSelect(
-                      mapping.creditColumn,
-                      (value) =>
-                        setMapping({ ...mapping, creditColumn: value }),
-                      "Coluna de crédito",
-                    )}
-                  </label>
-                </>
-              )}
-              <div className="md:col-span-2">
-                <Button
-                  onClick={() => void analyze()}
-                  disabled={loading || !mapPayload(mapping)}
-                >
-                  <Upload className="mr-2 size-4" />
-                  Montar prévia
-                </Button>
-              </div>
-            </section>
-          )}
           {reviewRows.length > 0 && (
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -690,22 +406,7 @@ export function FinancialStatementImportDialog({
                     : "classificadas automaticamente"}{" "}
                   · {needsCategoryCount}{" "}
                   {needsCategoryCount === 1 ? "pendente" : "pendentes"}
-                  <span className="block text-xs text-muted-foreground">
-                    Descrições iguais e com o mesmo tipo recebem a categoria
-                    juntas.
-                  </span>
                 </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setReviewRows([]);
-                    setMapping(initialMapping(preview?.headers ?? []));
-                  }}
-                >
-                  Alterar colunas
-                </Button>
               </div>
               <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
                 <table className="w-full table-fixed text-sm">
@@ -797,20 +498,11 @@ export function FinancialStatementImportDialog({
                           </td>
                           <td className="p-2">
                             <Input
-                              value={row.actualDate ?? ""}
+                              value={formatDateForDisplay(row.actualDate)}
                               placeholder="dd/mm/aaaa"
-                              onChange={(event) => {
-                                const actualDate = event.target.value;
-                                updateRow(row.sourceRow, {
-                                  actualDate,
-                                  errors: toIsoDate(actualDate)
-                                    ? row.errors.filter(
-                                        (message) =>
-                                          !message.startsWith("Confira a data"),
-                                      )
-                                    : row.errors,
-                                });
-                              }}
+                              onChange={(event) =>
+                                updateDate(row.sourceRow, event.target.value)
+                              }
                               aria-label={`Data da linha ${row.sourceRow}`}
                             />
                           </td>
@@ -872,16 +564,6 @@ export function FinancialStatementImportDialog({
                                 ))}
                               </SelectContent>
                             </Select>
-                            {row.categorySource === "saved" && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Categoria da sua escolha anterior
-                              </p>
-                            )}
-                            {row.categorySource === "suggested" && (
-                              <p className="mt-1 text-xs text-amber-700">
-                                Sugestão automática — confira
-                              </p>
-                            )}
                           </td>
                           <td className="break-words p-2 text-xs">
                             {row.alreadyImported && (
@@ -1003,20 +685,11 @@ export function FinancialStatementImportDialog({
                         <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
                           Data
                           <Input
-                            value={row.actualDate ?? ""}
+                            value={formatDateForDisplay(row.actualDate)}
                             placeholder="dd/mm/aaaa"
-                            onChange={(event) => {
-                              const actualDate = event.target.value;
-                              updateRow(row.sourceRow, {
-                                actualDate,
-                                errors: toIsoDate(actualDate)
-                                  ? row.errors.filter(
-                                      (message) =>
-                                        !message.startsWith("Confira a data"),
-                                    )
-                                  : row.errors,
-                              });
-                            }}
+                            onChange={(event) =>
+                              updateDate(row.sourceRow, event.target.value)
+                            }
                             aria-label={`Data da linha ${row.sourceRow}`}
                           />
                         </label>
@@ -1083,16 +756,6 @@ export function FinancialStatementImportDialog({
                           </Select>
                         </label>
                       </div>
-                      {row.categorySource === "saved" && (
-                        <p className="text-xs text-muted-foreground">
-                          Categoria da sua escolha anterior
-                        </p>
-                      )}
-                      {row.categorySource === "suggested" && (
-                        <p className="text-xs text-amber-700">
-                          Sugestão automática — confira
-                        </p>
-                      )}
                       {rowErrors.length > 0 && (
                         <div className="space-y-1 text-xs text-destructive">
                           {rowErrors.map((message) => (
@@ -1104,11 +767,12 @@ export function FinancialStatementImportDialog({
                   );
                 })}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Se o extrato incluir compras individuais do cartão e o pagamento
-                total da fatura, evite importar os dois como despesas: isso pode
-                contar a mesma saída duas vezes.
-              </p>
+              {hasCardPaymentOverlap && (
+                <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900">
+                  O arquivo contém compras no cartão e pagamento de fatura.
+                  Revise para não contar as mesmas despesas duas vezes.
+                </p>
+              )}
               <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
                 <Checkbox
                   checked={rememberCategories}
@@ -1118,12 +782,7 @@ export function FinancialStatementImportDialog({
                 />
                 <span>
                   <span className="block font-medium">
-                    Lembrar estas categorias nos próximos extratos
-                  </span>
-                  <span className="text-muted-foreground">
-                    Só para a mesma descrição e tipo de lançamento; maiúsculas e
-                    espaços extras são normalizados. Desmarque para não guardar
-                    as escolhas deste arquivo.
+                    Lembrar minhas categorias para próximos extratos
                   </span>
                 </span>
               </label>
