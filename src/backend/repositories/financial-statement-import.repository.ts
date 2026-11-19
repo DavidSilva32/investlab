@@ -9,6 +9,7 @@ import { getDatabaseClient } from "@/infrastructure/database/client";
 import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
 import type { StatementConfirmInput } from "@/backend/schemas/financial-statement-import.schema";
+import type { FinancialKind } from "@/backend/schemas/financial.schema";
 
 export function normalizeStatementDescription(value: string) {
   return value.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
@@ -30,7 +31,7 @@ function duplicateKey(row: {
 
 export class FinancialStatementImportRepository {
   async listSavedCategoryRules(
-    choices: Array<{ kind: "INCOME" | "EXPENSE"; descriptionKey: string }>,
+    choices: Array<{ kind: FinancialKind; descriptionKey: string }>,
   ) {
     if (choices.length === 0) return [];
     const userId = requireDataOwnerId();
@@ -80,7 +81,7 @@ export class FinancialStatementImportRepository {
   async findPossibleDuplicateRows(
     rows: Array<{
       sourceRow: number;
-      kind: "INCOME" | "EXPENSE";
+      kind: FinancialKind;
       description: string;
       actualDate: string;
       actualAmount: number;

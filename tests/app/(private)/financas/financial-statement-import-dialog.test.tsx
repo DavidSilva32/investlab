@@ -28,6 +28,18 @@ const categories = [
     name: "Salário",
     active: true,
   },
+  {
+    id: "323e4567-e89b-42d3-a456-426614174000",
+    kind: "EXPENSE" as const,
+    name: "Investimentos",
+    active: true,
+  },
+  {
+    id: "423e4567-e89b-42d3-a456-426614174000",
+    kind: "INCOME" as const,
+    name: "Resgates de investimentos",
+    active: true,
+  },
 ];
 
 function deferred<T>() {
@@ -78,6 +90,89 @@ afterEach(() => {
 });
 
 describe("FinancialStatementImportDialog", () => {
+  it("shows an automatic category suggestion and the review counts", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "d".repeat(64),
+            headers: ["Data", "Descrição", "Valor"],
+            mapping: null,
+            rows: [
+              {
+                sourceRow: 2,
+                values: ["14/11/2026", "Aplicação CDB Porquinho", "-2000"],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hash: "d".repeat(64),
+            headers: ["Data", "Descrição", "Valor"],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "EXPENSE",
+                description: "Aplicação CDB Porquinho",
+                actualDate: "2026-11-14",
+                amount: 2000,
+                errors: [],
+                categoryId: categories[2].id,
+                categorySource: "suggested",
+                possibleDuplicate: false,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["synthetic"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findByText("Como identificar as colunas?");
+    await user.click(screen.getByRole("button", { name: "Montar prévia" }));
+
+    expect(
+      (await screen.findAllByText("Sugestão automática — confira")).length,
+    ).toBe(2);
+    expect(
+      screen.getByText(/1 classificada automaticamente · 0 pendentes/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Descrições iguais e com o mesmo tipo recebem a categoria juntas.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("maps an Inter-like statement, reviews categories, and confirms only after review", async () => {
     const user = userEvent.setup();
     const fetchMock = vi
@@ -355,6 +450,14 @@ describe("FinancialStatementImportDialog", () => {
                 amount: 30,
                 errors: [],
               },
+              {
+                sourceRow: 5,
+                kind: "EXPENSE",
+                description: "Padaria da Esquina",
+                actualDate: "2026-11-14",
+                amount: 12,
+                errors: [],
+              },
             ],
           }),
           { status: 200 },
@@ -387,6 +490,9 @@ describe("FinancialStatementImportDialog", () => {
       await screen.findByRole("button", { name: "Montar prévia" }),
     );
     await screen.findAllByText("Categoria da sua escolha anterior");
+    expect(
+      screen.getByText(/1 classificada automaticamente · 3 pendentes/),
+    ).toBeTruthy();
 
     await user.click(
       firstMatch(
@@ -418,6 +524,14 @@ describe("FinancialStatementImportDialog", () => {
       ),
     );
     await user.click(await screen.findByRole("option", { name: "Salário" }));
+    expect(
+      firstMatch(
+        screen.getAllByRole("combobox", { name: "Categoria da linha 5" }),
+      ).textContent,
+    ).toContain("Selecione");
+    await user.click(
+      firstMatch(screen.getAllByRole("checkbox", { name: "Importar linha 5" })),
+    );
     await user.click(
       screen.getByRole("checkbox", {
         name: /Lembrar estas categorias nos próximos extratos/,
@@ -435,6 +549,26 @@ describe("FinancialStatementImportDialog", () => {
         }),
       ),
     );
+    const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+      rows: Array<{ sourceRow: number; kind: string; categoryId: string }>;
+    };
+    expect(confirmation.rows).toEqual([
+      expect.objectContaining({
+        sourceRow: 2,
+        kind: "EXPENSE",
+        categoryId: categories[0].id,
+      }),
+      expect.objectContaining({
+        sourceRow: 3,
+        kind: "EXPENSE",
+        categoryId: categories[0].id,
+      }),
+      expect.objectContaining({
+        sourceRow: 4,
+        kind: "INCOME",
+        categoryId: categories[1].id,
+      }),
+    ]);
   });
 
   it("ignores an older preview after the user switches files", async () => {

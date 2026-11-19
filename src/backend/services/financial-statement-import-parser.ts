@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import * as XLSX from "xlsx";
 import { ApplicationError } from "@/backend/errors/application-error";
+import type { FinancialKind } from "@/backend/schemas/financial.schema";
 
 export type StatementRawValue = string | number | boolean;
 export type StatementRawRow = {
@@ -19,7 +20,7 @@ export type StatementColumnMapping = {
 
 export type ParsedStatementRow = {
   sourceRow: number;
-  kind: "INCOME" | "EXPENSE" | null;
+  kind: FinancialKind | null;
   description: string;
   actualDate: string | null;
   amount: number | null;

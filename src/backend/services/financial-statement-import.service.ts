@@ -9,6 +9,7 @@ import {
   statementMappingSchema,
   type StatementMapping,
 } from "@/backend/schemas/financial-statement-import.schema";
+import type { FinancialKind } from "@/backend/schemas/financial.schema";
 import {
   parseStatementFile,
   parseStatementRows,
@@ -79,6 +80,124 @@ function defaultMapping(headers: string[]): StatementMapping | null {
   return null;
 }
 
+function normalizedKeywords(description: string) {
+  return description
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("pt-BR");
+}
+
+function inferEverydayCategory(description: string, kind: FinancialKind) {
+  const text = normalizedKeywords(description);
+  if (
+    kind === "EXPENSE" &&
+    /\b(CDB|RDB|PORQUINHO|INVESTIMENTO)\b/.test(text) &&
+    /\b(APLICACAO|APORTE|APLICAR)\b/.test(text)
+  ) {
+    return "Investimentos";
+  }
+  if (
+    kind === "INCOME" &&
+    /\b(CDB|RDB|PORQUINHO|INVESTIMENTO)\b/.test(text) &&
+    /\bRESGATE\b/.test(text)
+  ) {
+    return "Resgates de investimentos";
+  }
+  if (/\bMERCADO (LIVRE|PAGO)\b/.test(text)) return null;
+  const isGenericTransfer =
+    /\b(PIX|TED|DOC|TRANSFERENCIA|TRANSFERIDO|TRANSFERENCIA ENTRE CONTAS)\b/.test(
+      text,
+    );
+
+  const catalog: Array<{
+    kind: FinancialKind;
+    category: string;
+    patterns: RegExp[];
+  }> = [
+    {
+      kind: "EXPENSE",
+      category: "Transporte",
+      patterns: [
+        /\bUBER\b(?!\s+EATS\b)/,
+        /\b99(?:APP|POP|TAXI| TECNOLOGIA)\b/,
+        /\bTAXI\b/,
+      ],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Alimentação",
+      patterns: [
+        /\b(SUPERMERCADO|MERCADO|HORTIFRUTI|MERCEARIA|ACOUGUE|PADARIA)\b/,
+        /\b(RESTAURANTE|LANCHONETE|PIZZARIA|IFOOD|RAPPI|UBER EATS)\b/,
+      ],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Saúde",
+      patterns: [/\b(FARMACIA|DROGARIA|HOSPITAL|CLINICA|LABORATORIO)\b/],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Moradia",
+      patterns: [/\b(ALUGUEL|CONDOMINIO|IMOBILIARIA)\b/],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Contas e serviços",
+      patterns: [
+        /\b(INTERNET|TELEFONE|TELEFONIA|CELULAR|BANDA LARGA)\b/,
+        /\b(LUZ|AGUA|ENERGIA|ELETRICIDADE|GAS|GAS ENCANADO)\b/,
+      ],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Educação",
+      patterns: [
+        /\b(ESCOLA|FACULDADE|UNIVERSIDADE|MENSALIDADE ESCOLAR|MATERIAL ESCOLAR)\b/,
+      ],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Impostos e taxas",
+      patterns: [/\b(IPTU|IPVA|DARF|IMPOSTO|TRIBUTO|TAXA DE LICENCIAMENTO)\b/],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Seguros",
+      patterns: [/\b(SEGURO|SEGURADORA|APOLICE)\b/],
+    },
+    {
+      kind: "EXPENSE",
+      category: "Lazer",
+      patterns: [
+        /\b(CINEMA|TEATRO|SHOW|PARQUE DE DIVERSOES|SPOTIFY|NETFLIX)\b/,
+      ],
+    },
+    {
+      kind: "INCOME",
+      category: "Salário",
+      patterns: [/\b(SALARIO|FOLHA DE PAGAMENTO|PAGAMENTO DE SALARIO)\b/],
+    },
+    {
+      kind: "INCOME",
+      category: "Renda de aluguel",
+      patterns: [/\b(ALUGUEL RECEBIDO|RECEBIMENTO DE ALUGUEL)\b/],
+    },
+    {
+      kind: "INCOME",
+      category: "Benefícios",
+      patterns: [/\b(BENEFICIO INSS|PENSAO|APOSENTADORIA)\b/],
+    },
+  ];
+  const suggestedCategory =
+    catalog.find(
+      (rule) =>
+        rule.kind === kind &&
+        rule.patterns.some((pattern) => pattern.test(text)),
+    )?.category ?? null;
+  return isGenericTransfer && !suggestedCategory ? null : suggestedCategory;
+}
+
 export class FinancialStatementImportService {
   async preview(file: { name: string; buffer: Buffer }, rawMapping?: unknown) {
     const parsedFile = parseStatementFile(file.name, file.buffer);
@@ -131,9 +250,7 @@ export class FinancialStatementImportService {
             descriptionKey: normalizeStatementDescription(row.description),
           })),
       );
-    const categories = savedRules.length
-      ? await financialRepository.listCategories()
-      : [];
+    const categories = await financialRepository.listCategories();
     const savedCategoryByDescription = new Map<string, string>();
     for (const rule of savedRules) {
       const category = categories.find(
@@ -157,25 +274,44 @@ export class FinancialStatementImportService {
       hash: parsedFile.hash,
       headers: parsedFile.headers,
       mapping,
-      rows: rows.map((row) => ({
-        ...row,
-        categoryId:
-          row.kind && row.errors.length === 0
-            ? (savedCategoryByDescription.get(
-                `${row.kind}|${normalizeStatementDescription(row.description)}`,
-              ) ?? null)
-            : null,
-        categorySource:
-          row.kind &&
-          row.errors.length === 0 &&
-          savedCategoryByDescription.has(
-            `${row.kind}|${normalizeStatementDescription(row.description)}`,
-          )
-            ? "saved"
-            : null,
-        alreadyImported: alreadyImported.has(row.sourceRow),
-        possibleDuplicate: duplicateRows.includes(row.sourceRow),
-      })),
+      rows: rows.map((row) => {
+        const descriptionKey = normalizeStatementDescription(row.description);
+        const kind = row.kind;
+        const key = kind ? `${kind}|${descriptionKey}` : "";
+        const savedCategoryId = key
+          ? savedCategoryByDescription.get(key)
+          : undefined;
+        const suggestedName = kind
+          ? inferEverydayCategory(row.description, kind)
+          : null;
+        const suggestedCategoryId = categories.find(
+          (category) =>
+            category.isDefault &&
+            category.active &&
+            category.kind === kind &&
+            (category.originalName ?? category.name).toLocaleLowerCase(
+              "pt-BR",
+            ) === suggestedName?.toLocaleLowerCase("pt-BR"),
+        )?.id;
+        return {
+          ...row,
+          kind,
+          categoryId:
+            row.errors.length === 0
+              ? (savedCategoryId ?? suggestedCategoryId ?? null)
+              : null,
+          categorySource:
+            row.errors.length > 0
+              ? null
+              : savedCategoryId
+                ? "saved"
+                : suggestedCategoryId
+                  ? "suggested"
+                  : null,
+          alreadyImported: alreadyImported.has(row.sourceRow),
+          possibleDuplicate: duplicateRows.includes(row.sourceRow),
+        };
+      }),
     };
   }
 

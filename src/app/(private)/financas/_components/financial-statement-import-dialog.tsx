@@ -29,9 +29,10 @@ import type {
   StatementRawRow,
 } from "@/backend/services/financial-statement-import-parser";
 
+type Kind = "INCOME" | "EXPENSE";
 type Category = {
   id: string;
-  kind: "INCOME" | "EXPENSE";
+  kind: Kind;
   name: string;
   active: boolean;
 };
@@ -45,7 +46,7 @@ type PreviewResponse = {
         ParsedStatementRow & {
           alreadyImported?: boolean;
           categoryId?: string | null;
-          categorySource?: "saved" | null;
+          categorySource?: "saved" | "suggested" | null;
           possibleDuplicate: boolean;
         }
       >;
@@ -54,7 +55,7 @@ type ReviewRow = ParsedStatementRow & {
   alreadyImported?: boolean;
   possibleDuplicate: boolean;
   categoryId: string;
-  categorySource?: "saved";
+  categorySource?: "saved" | "suggested";
   included: boolean;
 };
 type MappingForm = {
@@ -215,6 +216,13 @@ export function FinancialStatementImportDialog({
   const duplicateCount = includedRows.filter(
     (row) => row.possibleDuplicate,
   ).length;
+  const classifiedAutomaticallyCount = includedRows.filter(
+    (row) =>
+      row.categorySource === "saved" || row.categorySource === "suggested",
+  ).length;
+  const needsCategoryCount = includedRows.filter(
+    (row) => row.kind && !row.categoryId,
+  ).length;
   const activeCategories = categories.filter((category) => category.active);
 
   const reset = () => {
@@ -251,7 +259,7 @@ export function FinancialStatementImportDialog({
               ParsedStatementRow & {
                 alreadyImported?: boolean;
                 categoryId?: string | null;
-                categorySource?: "saved" | null;
+                categorySource?: "saved" | "suggested" | null;
                 possibleDuplicate: boolean;
               }
             >
@@ -320,7 +328,7 @@ export function FinancialStatementImportDialog({
             ParsedStatementRow & {
               alreadyImported?: boolean;
               categoryId?: string | null;
-              categorySource?: "saved" | null;
+              categorySource?: "saved" | "suggested" | null;
               possibleDuplicate: boolean;
             }
           >
@@ -676,7 +684,16 @@ export function FinancialStatementImportDialog({
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <p>
                   {includedRows.length} de {reviewRows.length} linhas
-                  selecionadas para importar.
+                  selecionadas · {classifiedAutomaticallyCount}{" "}
+                  {classifiedAutomaticallyCount === 1
+                    ? "classificada automaticamente"
+                    : "classificadas automaticamente"}{" "}
+                  · {needsCategoryCount}{" "}
+                  {needsCategoryCount === 1 ? "pendente" : "pendentes"}
+                  <span className="block text-xs text-muted-foreground">
+                    Descrições iguais e com o mesmo tipo recebem a categoria
+                    juntas.
+                  </span>
                 </p>
                 <Button
                   type="button"
@@ -756,7 +773,7 @@ export function FinancialStatementImportDialog({
                           <td className="p-2">
                             <Select
                               value={row.kind ?? ""}
-                              onValueChange={(value: "INCOME" | "EXPENSE") =>
+                              onValueChange={(value: Kind) =>
                                 updateRow(row.sourceRow, {
                                   kind: value,
                                   errors: row.errors.filter(
@@ -773,8 +790,8 @@ export function FinancialStatementImportDialog({
                                 <SelectValue placeholder="Tipo" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="INCOME">Receita</SelectItem>
-                                <SelectItem value="EXPENSE">Despesa</SelectItem>
+                                <SelectItem value="INCOME">Entrada</SelectItem>
+                                <SelectItem value="EXPENSE">Saída</SelectItem>
                               </SelectContent>
                             </Select>
                           </td>
@@ -858,6 +875,11 @@ export function FinancialStatementImportDialog({
                             {row.categorySource === "saved" && (
                               <p className="mt-1 text-xs text-muted-foreground">
                                 Categoria da sua escolha anterior
+                              </p>
+                            )}
+                            {row.categorySource === "suggested" && (
+                              <p className="mt-1 text-xs text-amber-700">
+                                Sugestão automática — confira
                               </p>
                             )}
                           </td>
@@ -956,7 +978,7 @@ export function FinancialStatementImportDialog({
                           Tipo
                           <Select
                             value={row.kind ?? ""}
-                            onValueChange={(value: "INCOME" | "EXPENSE") =>
+                            onValueChange={(value: Kind) =>
                               updateRow(row.sourceRow, {
                                 kind: value,
                                 errors: row.errors.filter(
@@ -973,8 +995,8 @@ export function FinancialStatementImportDialog({
                               <SelectValue placeholder="Tipo" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="INCOME">Receita</SelectItem>
-                              <SelectItem value="EXPENSE">Despesa</SelectItem>
+                              <SelectItem value="INCOME">Entrada</SelectItem>
+                              <SelectItem value="EXPENSE">Saída</SelectItem>
                             </SelectContent>
                           </Select>
                         </label>
@@ -1064,6 +1086,11 @@ export function FinancialStatementImportDialog({
                       {row.categorySource === "saved" && (
                         <p className="text-xs text-muted-foreground">
                           Categoria da sua escolha anterior
+                        </p>
+                      )}
+                      {row.categorySource === "suggested" && (
+                        <p className="text-xs text-amber-700">
+                          Sugestão automática — confira
                         </p>
                       )}
                       {rowErrors.length > 0 && (
