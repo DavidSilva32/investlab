@@ -712,7 +712,7 @@ export class ImportRepository {
             ...existing,
           };
         }
-        let positionChangeSummary: B3PositionSnapshotComparison | undefined;
+        let positionChangeSummary: B3PositionSnapshotComparison;
         if (input.documentType === "B3_MOVEMENT_XLSX")
           await transaction.execute(
             sql`LOCK TABLE ${positionSnapshots}, ${positionItems}, ${movementItems} IN SHARE ROW EXCLUSIVE MODE`,
@@ -906,7 +906,7 @@ export class ImportRepository {
         return {
           importId: importRecord.id,
           snapshotId: snapshot.id,
-          ...(positionChangeSummary ? { positionChangeSummary } : {}),
+          positionChangeSummary: positionChangeSummary!,
         };
       });
     } catch (error) {

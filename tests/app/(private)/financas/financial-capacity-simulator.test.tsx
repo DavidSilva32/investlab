@@ -88,6 +88,23 @@ describe("FinancialCapacitySimulator", () => {
     );
   });
 
+  it("uses the current-month baseline explanation after a successful simulation", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce(baseline("2026-11"))
+      .mockResolvedValueOnce(simulation("2026-11"));
+    render(<FinancialCapacitySimulator month="2026-11" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+    await screen.findByLabelText("Renda do mês");
+    await user.click(screen.getByRole("button", { name: "Simular" }));
+
+    expect(
+      await screen.findByText("Previsões + realizados sem previsão"),
+    ).toBeTruthy();
+  });
+
   it("submits masked absolute monthly totals and exposes a positive Strategy prefill", async () => {
     const user = userEvent.setup();
     api.request
@@ -277,6 +294,84 @@ describe("FinancialCapacitySimulator", () => {
     );
   });
 
+  it("uses safe fallback copy when baseline loading rejects without an Error", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValueOnce("offline");
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível carregar os valores do mês.",
+      ),
+    );
+  });
+
+  it("shows an unavailable simulation when no baseline or result can be calculated", async () => {
+    const user = userEvent.setup();
+    const noData = {
+      ...baseline("2099-01", null, null),
+      incomeCents: "10000",
+      expenseCents: "5000",
+      baseBalanceCents: null,
+      simulatedBalanceCents: null,
+      status: "unavailable" as const,
+      completeness: "no_data" as const,
+    };
+    api.request
+      .mockResolvedValueOnce(baseline("2099-01", null, null))
+      .mockResolvedValueOnce(noData);
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+    const income = await screen.findByLabelText("Renda do mês");
+    await user.type(income, "10000");
+    await user.type(screen.getByLabelText("Despesas do mês"), "5000");
+    await user.click(screen.getByRole("button", { name: "Simular" }));
+
+    expect(await screen.findByText("Sem dados suficientes")).toBeTruthy();
+    expect(screen.getByText("Não disponível")).toBeTruthy();
+    expect(screen.getByText("Sem valores registrados")).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Valores sem base conhecida não são presumidos como zero/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("validates an over-limit expense and tolerates unavailable caret positions", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValueOnce(baseline());
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+    const expenses = (await screen.findByLabelText(
+      "Despesas do mês",
+    )) as HTMLInputElement;
+    Object.defineProperty(expenses, "selectionStart", {
+      configurable: true,
+      get: () => null,
+    });
+    Object.defineProperty(expenses, "selectionEnd", {
+      configurable: true,
+      get: () => null,
+    });
+
+    fireEvent.change(expenses, { target: { value: "123456789012345" } });
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Informe até R$ 999.999.999.999,99.",
+    );
+    expect(expenses.value).toBe("R$ 1.234.567.890.123,45");
+    expect(
+      screen.getByRole("button", { name: "Simular" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
   it("disables the action while the calculation is pending", async () => {
     const user = userEvent.setup();
     let resolveSimulation: ((value: unknown) => void) | undefined;
@@ -345,6 +440,148 @@ describe("FinancialCapacitySimulator", () => {
     expect(screen.getByLabelText("Renda do mês")).toHaveProperty(
       "value",
       "R$ 222,00",
+    );
+  });
+
+  it("ignores a failed calculation after the simulator closes and reopens", async () => {
+    const user = userEvent.setup();
+    const pending: { reject?: (reason?: unknown) => void } = {};
+    api.request
+      .mockResolvedValueOnce(baseline("2099-01", "10000", "2000"))
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            pending.reject = reject;
+          }),
+      )
+      .mockResolvedValueOnce(baseline("2099-01", "12000", "3000"));
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    const trigger = screen.getByRole("button", {
+      name: "Simular mudança no mês",
+    });
+    await user.click(trigger);
+    await screen.findByLabelText("Renda do mês");
+    await user.click(screen.getByRole("button", { name: "Simular" }));
+    await screen.findByRole("button", { name: "Calculando…" });
+
+    await user.click(trigger);
+    await user.click(trigger);
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(3));
+    pending.reject?.(new Error("A solicitação antiga falhou."));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Renda do mês")).toHaveProperty(
+        "value",
+        "R$ 120,00",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Calculando…" })).toBeNull();
+  });
+
+  it("ignores an outdated baseline response after close and reopen", async () => {
+    const user = userEvent.setup();
+    const firstBaseline: { resolve?: (value: unknown) => void } = {};
+    api.request
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            firstBaseline.resolve = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(baseline("2099-01", "22200", "3000"));
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    const trigger = screen.getByRole("button", {
+      name: "Simular mudança no mês",
+    });
+    await user.click(trigger);
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1));
+
+    await user.click(trigger);
+    await user.click(trigger);
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+    expect(await screen.findByLabelText("Renda do mês")).toHaveProperty(
+      "value",
+      "R$ 222,00",
+    );
+
+    firstBaseline.resolve?.(baseline("2099-01", "11100", "1000"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Renda do mês")).toHaveProperty(
+        "value",
+        "R$ 222,00",
+      ),
+    );
+  });
+
+  it("ignores an outdated baseline failure after close and reopen", async () => {
+    const user = userEvent.setup();
+    const firstBaseline: { reject?: (reason?: unknown) => void } = {};
+    api.request
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            firstBaseline.reject = reject;
+          }),
+      )
+      .mockResolvedValueOnce(baseline("2099-01", "22200", "3000"));
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    const trigger = screen.getByRole("button", {
+      name: "Simular mudança no mês",
+    });
+    await user.click(trigger);
+    await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1));
+    await user.click(trigger);
+    await user.click(trigger);
+    expect(await screen.findByLabelText("Renda do mês")).toHaveProperty(
+      "value",
+      "R$ 222,00",
+    );
+
+    firstBaseline.reject?.(new Error("Falha da solicitação antiga."));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Renda do mês")).toHaveProperty(
+        "value",
+        "R$ 222,00",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("reports a simulation API error and restores the action", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce(baseline())
+      .mockRejectedValueOnce(new Error("Falha ao simular."));
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+    await screen.findByLabelText("Renda do mês");
+    await user.click(screen.getByRole("button", { name: "Simular" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Falha ao simular."),
+    );
+    expect(screen.getByRole("button", { name: "Simular" })).toBeTruthy();
+  });
+
+  it("uses a safe fallback for non-Error simulation failures", async () => {
+    const user = userEvent.setup();
+    api.request
+      .mockResolvedValueOnce(baseline())
+      .mockRejectedValueOnce("offline");
+    render(<FinancialCapacitySimulator month="2099-01" />);
+    await user.click(
+      screen.getByRole("button", { name: "Simular mudança no mês" }),
+    );
+    await screen.findByLabelText("Renda do mês");
+    await user.click(screen.getByRole("button", { name: "Simular" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível simular a capacidade mensal.",
+      ),
     );
   });
 });

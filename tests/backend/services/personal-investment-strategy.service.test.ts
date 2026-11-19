@@ -725,8 +725,8 @@ describe("PersonalInvestmentStrategyService", () => {
             contributionValueCents: "2000",
             projectedValueCents: "6000",
           },
-          { id: "international_etfs" },
-          { id: "fiis" },
+          { id: "international_etfs", currentValueCents: "0" },
+          { id: "fiis", currentValueCents: "0" },
         ],
         completeness: {
           complete: false,

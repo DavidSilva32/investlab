@@ -50,6 +50,12 @@ const categories = [
     active: true,
   },
   {
+    id: "34e0fa40-0563-4e4e-a52e-64fab0e6f79f",
+    kind: "EXPENSE" as const,
+    name: "Fatura do cartão",
+    active: true,
+  },
+  {
     id: "e9f0fa40-0563-4e4e-a52e-64fab0e6f79f",
     kind: "INCOME" as const,
     name: "Salário",
@@ -103,6 +109,35 @@ describe("FinancialEntryDialog", () => {
         .getByRole("button", { name: "Salvar lançamento" })
         .hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it("restores the combined planned and realized mode when editing a completed entry", () => {
+    renderDialog(
+      <FinancialEntryDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        entry={{
+          id: "entry-both",
+          kind: "EXPENSE",
+          description: "Aluguel",
+          categoryId: categories[0].id,
+          categoryName: "Moradia",
+          expectedAmount: "550.00",
+          expectedDate: "2026-10-01",
+          actualAmount: "560.00",
+          actualDate: "2026-10-03",
+        }}
+        onSaved={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("combobox", { name: "Situação do lançamento" })
+        .textContent,
+    ).toContain("Registrar previsto e realizado");
+    expect(screen.getByLabelText("Data prevista")).toBeTruthy();
+    expect(screen.getByLabelText("Data realizada")).toBeTruthy();
   });
 
   it("filters categories by movement and saves an actual-only income", async () => {
@@ -443,16 +478,8 @@ describe("FinancialEntryDialog", () => {
     );
   });
 
-  it("creates and selects a category from the launch form", async () => {
+  it("searches and selects a category from the fixed catalog", async () => {
     const user = userEvent.setup();
-    api.withResponse.mockResolvedValue({
-      data: {
-        id: "cat-new",
-        kind: "EXPENSE",
-        name: "Saúde",
-        active: true,
-      },
-    });
     api.request.mockResolvedValue({});
     renderDialog(
       <FinancialEntryDialog
@@ -463,17 +490,15 @@ describe("FinancialEntryDialog", () => {
         onSaved={() => {}}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /Criar categoria/ }));
-    await user.type(screen.getByLabelText("Nome"), "Saúde");
-    await user.click(screen.getByRole("button", { name: "Criar categoria" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "Nova categoria de saída" }),
-      ).toBeNull(),
-    );
     await user.click(screen.getByRole("combobox", { name: "Categoria" }));
-    await user.click(await screen.findByRole("option", { name: "Saúde" }));
-    await user.type(screen.getByLabelText("Descrição"), "Consulta médica");
+    await user.type(screen.getByLabelText("Buscar categoria"), "fatura");
+    await user.click(
+      await screen.findByRole("option", { name: "Fatura do cartão" }),
+    );
+    await user.type(
+      screen.getByLabelText("Descrição"),
+      "Fatura do cartão Inter",
+    );
     await user.click(
       screen.getByRole("combobox", { name: "Situação do lançamento" }),
     );
@@ -488,7 +513,10 @@ describe("FinancialEntryDialog", () => {
     await user.click(screen.getByRole("button", { name: "Salvar lançamento" }));
     await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
     const [, entryOptions] = api.request.mock.calls[0];
-    expect(JSON.parse(entryOptions.body as string).categoryId).toBe("cat-new");
+    expect(JSON.parse(entryOptions.body as string).categoryId).toBe(
+      "34e0fa40-0563-4e4e-a52e-64fab0e6f79f",
+    );
+    expect(api.withResponse).not.toHaveBeenCalled();
   });
 
   it("explains essential expenses and resets the flag when recurrence is disabled or changed to income", async () => {

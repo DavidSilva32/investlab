@@ -315,8 +315,8 @@ export class PersonalInvestmentStrategyService {
     const currentValuesCents = Object.fromEntries(
       groups.map(({ id }) => [
         id,
-        strategyWealth.classes.find((assetClass) => assetClass.id === id)
-          ?.knownValueCents ?? "0",
+        strategyWealth.classes.find((assetClass) => assetClass.id === id)!
+          .knownValueCents,
       ]),
     ) as Record<(typeof groups)[number]["id"], string>;
     const unclassifiedKnownValueCents = BigInt(

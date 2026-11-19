@@ -3,9 +3,6 @@ import { ApplicationError } from "@/backend/errors/application-error";
 
 const state = vi.hoisted(() => ({
   getCategories: vi.fn(),
-  createCategory: vi.fn(),
-  updateCategory: vi.fn(),
-  deleteCategory: vi.fn(),
   getEntries: vi.fn(),
   createEntry: vi.fn(),
   updateEntry: vi.fn(),
@@ -20,9 +17,6 @@ const state = vi.hoisted(() => ({
 vi.mock("@/backend/controllers/financial.controller", () => ({
   financialController: {
     getCategories: state.getCategories,
-    createCategory: state.createCategory,
-    updateCategory: state.updateCategory,
-    deleteCategory: state.deleteCategory,
     getEntries: state.getEntries,
     createEntry: state.createEntry,
     updateEntry: state.updateEntry,
@@ -41,12 +35,7 @@ vi.mock("@/infrastructure/logging/api-request", () => ({
     handler,
 }));
 
-import {
-  DELETE as deleteCategories,
-  GET as getCategories,
-  PATCH as patchCategories,
-  POST as postCategories,
-} from "@/app/api/financial-categories/route";
+import { GET as getCategories } from "@/app/api/financial-categories/route";
 import {
   DELETE as deleteEntries,
   GET as getEntries,
@@ -77,27 +66,6 @@ describe("financial API routes", () => {
         "GET",
         "/api/financial-categories",
         "categories",
-      ],
-      [
-        postCategories,
-        state.createCategory,
-        "POST",
-        "/api/financial-categories",
-        "write",
-      ],
-      [
-        patchCategories,
-        state.updateCategory,
-        "PATCH",
-        "/api/financial-categories",
-        "write",
-      ],
-      [
-        deleteCategories,
-        state.deleteCategory,
-        "DELETE",
-        "/api/financial-categories?id=category-id",
-        "write",
       ],
       [
         getEntries,
@@ -171,27 +139,6 @@ describe("financial API routes", () => {
         "GET",
         "/api/financial-categories",
         "Não foi possível carregar as categorias.",
-      ],
-      [
-        postCategories,
-        state.createCategory,
-        "POST",
-        "/api/financial-categories",
-        "Não foi possível salvar a categoria.",
-      ],
-      [
-        patchCategories,
-        state.updateCategory,
-        "PATCH",
-        "/api/financial-categories",
-        "Não foi possível salvar a categoria.",
-      ],
-      [
-        deleteCategories,
-        state.deleteCategory,
-        "DELETE",
-        "/api/financial-categories?id=category-id",
-        "Não foi possível salvar a categoria.",
       ],
       [
         getEntries,

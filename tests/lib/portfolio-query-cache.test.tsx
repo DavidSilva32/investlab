@@ -11,7 +11,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryProvider } from "@/components/query-provider";
 import {
   useMonthlyPortfolioReview,
+  usePortfolioAllocation,
+  usePortfolioObjectives,
   usePortfolioOverview,
+  usePortfolioProventos,
 } from "@/lib/queries/portfolio";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
@@ -47,6 +50,22 @@ function MonthlyReviewHarness() {
       </button>
       <p>{query.data?.selectedPeriod ?? "Carregando fechamento…"}</p>
     </div>
+  );
+}
+
+function ProventosHarness() {
+  const query = usePortfolioProventos<{ totalReceived: string }>();
+  return <p>{query.data?.totalReceived ?? "Carregando proventos…"}</p>;
+}
+
+function ObjectivesAndAllocationHarness() {
+  const objectives = usePortfolioObjectives<{ name: string }[]>();
+  const allocation = usePortfolioAllocation<{ total: string }>();
+  return (
+    <p>
+      {objectives.data?.[0]?.name ?? "Carregando objetivos…"} ·{" "}
+      {allocation.data?.total ?? "Carregando alocação…"}
+    </p>
   );
 }
 
@@ -121,5 +140,45 @@ describe("portfolio query cache", () => {
       2,
       "/api/portfolio/monthly-review?period=2026-08",
     );
+  });
+
+  it("loads the portfolio proventos through its dedicated cached query", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ totalReceived: "234" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryProvider>
+        <ProventosHarness />
+      </QueryProvider>,
+    );
+
+    expect(await screen.findByText("234")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith("/api/proventos");
+  });
+
+  it("loads objectives and allocation through their dedicated cached queries", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ name: "Reserva" }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ total: "10000" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryProvider>
+        <ObjectivesAndAllocationHarness />
+      </QueryProvider>,
+    );
+
+    expect(await screen.findByText("Reserva · 10000")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/portfolio/objectives");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/portfolio/allocation");
   });
 });

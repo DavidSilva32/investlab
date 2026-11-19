@@ -2,10 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const repositories = vi.hoisted(() => ({
   listCategories: vi.fn(),
-  createCategory: vi.fn(),
-  updateOwnedCategory: vi.fn(),
-  saveDefaultCategoryPreference: vi.fn(),
-  setOwnedCategoryActive: vi.fn(),
   listEntries: vi.fn(),
   findCategory: vi.fn(),
   findEntry: vi.fn(),
@@ -23,10 +19,6 @@ const repositories = vi.hoisted(() => ({
 vi.mock("@/backend/repositories/financial.repository", () => ({
   financialRepository: {
     listCategories: repositories.listCategories,
-    createCategory: repositories.createCategory,
-    updateOwnedCategory: repositories.updateOwnedCategory,
-    saveDefaultCategoryPreference: repositories.saveDefaultCategoryPreference,
-    setOwnedCategoryActive: repositories.setOwnedCategoryActive,
     listEntries: repositories.listEntries,
     findCategory: repositories.findCategory,
     findEntry: repositories.findEntry,
@@ -183,14 +175,6 @@ describe("FinancialService", () => {
       defaultExpenseCategory,
       ownedCategory,
     ]);
-    repositories.createCategory.mockImplementation(async (value) => value);
-    repositories.updateOwnedCategory.mockResolvedValue(ownedCategory);
-    repositories.saveDefaultCategoryPreference.mockImplementation(
-      async (id, value) => ({ ...defaultCategory, id, ...value }),
-    );
-    repositories.setOwnedCategoryActive.mockImplementation(
-      async (_id, active) => ({ ...ownedCategory, active }),
-    );
     repositories.listEntries.mockResolvedValue([]);
     repositories.findCategory.mockImplementation(
       async (id) =>
@@ -237,108 +221,6 @@ describe("FinancialService", () => {
     expect(repositories.listEntries).toHaveBeenCalledWith(
       "2026-10-01",
       "2026-10-31",
-    );
-  });
-
-  it("creates custom categories and rejects duplicates after normalization", async () => {
-    await expect(
-      service.createCategory({ kind: "INCOME", name: "  Trabalho  " }),
-    ).resolves.toEqual({ kind: "INCOME", name: "Trabalho" });
-    expect(repositories.createCategory).toHaveBeenCalledWith({
-      kind: "INCOME",
-      name: "Trabalho",
-    });
-    await expect(
-      service.createCategory({ kind: "INCOME", name: " salário " }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    await expect(
-      service.createCategory({ kind: "OTHER", name: "x" }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-    });
-  });
-
-  it("customizes shared defaults without changing their shared source row", async () => {
-    await service.updateCategory({
-      id: defaultCategory.id,
-      name: "Renda principal",
-    });
-    expect(repositories.saveDefaultCategoryPreference).toHaveBeenCalledWith(
-      defaultCategory.id,
-      { nameOverride: "Renda principal", active: true },
-    );
-    await service.updateCategory({ id: defaultCategory.id, active: false });
-    expect(repositories.saveDefaultCategoryPreference).toHaveBeenLastCalledWith(
-      defaultCategory.id,
-      { nameOverride: null, active: false },
-    );
-  });
-
-  it("updates owned categories and permits reactivating a custom category", async () => {
-    await service.updateCategory({
-      id: ownedCategory.id,
-      name: "Casa",
-      active: false,
-    });
-    expect(repositories.updateOwnedCategory).toHaveBeenCalledWith(
-      ownedCategory.id,
-      { kind: "EXPENSE", name: "Casa" },
-    );
-    expect(repositories.setOwnedCategoryActive).toHaveBeenCalledWith(
-      ownedCategory.id,
-      false,
-    );
-    await service.updateCategory({ id: ownedCategory.id, active: true });
-    expect(repositories.setOwnedCategoryActive).toHaveBeenLastCalledWith(
-      ownedCategory.id,
-      true,
-    );
-    repositories.findCategory
-      .mockResolvedValueOnce(ownedCategory)
-      .mockResolvedValueOnce(null);
-    await expect(
-      service.updateCategory({ id: ownedCategory.id, name: "Contas da casa" }),
-    ).resolves.toBeNull();
-  });
-
-  it("rejects missing, duplicate, and non-owner categories", async () => {
-    repositories.findCategory.mockResolvedValueOnce(null);
-    await expect(
-      service.updateCategory({ id: ownedCategory.id, name: "Casa" }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    await expect(
-      service.updateCategory({ id: ownedCategory.id, name: "Alimentação" }),
-    ).rejects.toMatchObject({ statusCode: 409 });
-    repositories.findCategory.mockResolvedValueOnce({
-      ...ownedCategory,
-      userId: null,
-      isDefault: false,
-    });
-    await expect(
-      service.updateCategory({ id: ownedCategory.id, active: false }),
-    ).rejects.toMatchObject({ statusCode: 500 });
-    await expect(
-      service.updateCategory({ id: ownedCategory.id }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-    });
-  });
-
-  it("deactivates categories instead of deleting their historical references", async () => {
-    await expect(service.deleteCategory("bad-id")).rejects.toMatchObject({
-      statusCode: 400,
-    });
-    repositories.findCategory
-      .mockResolvedValueOnce(ownedCategory)
-      .mockResolvedValueOnce({ ...ownedCategory, active: false });
-    await expect(
-      service.deleteCategory(ownedCategory.id),
-    ).resolves.toMatchObject({
-      active: false,
-    });
-    expect(repositories.setOwnedCategoryActive).toHaveBeenCalledWith(
-      ownedCategory.id,
-      false,
     );
   });
 
@@ -1216,6 +1098,21 @@ describe("FinancialService", () => {
     });
   });
 
+  it("preserves a negative signed amount already present in stored data", async () => {
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        kind: "INCOME",
+        categoryId: defaultCategory.id,
+        actualAmount: "-0.01",
+        actualDate: "2026-10-01",
+      }),
+    ]);
+
+    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
+      summary: { realizedIncome: "-0.01" },
+    });
+  });
+
   it("returns the saved close state alongside the live monthly overview", async () => {
     const savedClose = {
       status: "needs_review",
@@ -1265,6 +1162,10 @@ describe("FinancialService", () => {
     await expect(
       service.closeMonth({ month: "2026-13" }),
     ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.closeMonth({ month: "bad" })).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Informe um mês válido para fechar.",
+    });
   });
 
   it("validates malformed, out-of-range, and impossible reporting months", async () => {

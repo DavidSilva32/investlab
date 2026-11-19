@@ -69,6 +69,7 @@ import {
   manualPortfolioPositions,
   movementItems,
   tradingItems,
+  b3ProventoItems,
   b3ReconciliationEvents,
 } from "@/infrastructure/database/schema";
 import { getEmergencyReserveAssetKey } from "@/lib/emergency-reserve-asset-key";
@@ -1782,6 +1783,60 @@ describe("import repository", () => {
     ]);
   });
 
+  it("persists a proventos import and its parsed items in one transaction", async () => {
+    const persisted: unknown[] = [];
+    const transaction = { ...emptyImportGuard(), insert: vi.fn() };
+    transaction.insert
+      .mockReturnValueOnce({
+        values: (value: unknown) => {
+          persisted.push(value);
+          return { returning: async () => [{ id: "provento-import" }] };
+        },
+      })
+      .mockReturnValueOnce({
+        values: (value: unknown) => {
+          persisted.push(value);
+          return Promise.resolve(undefined);
+        },
+      });
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.create({
+        fileName: "proventos-recebidos.xlsx",
+        fileHash: "provento-hash",
+        documentType: "B3_PROVENTO_XLSX",
+        proventos: [
+          {
+            status: "RECEIVED",
+            sourceSheet: "Recebidos",
+            sourceRow: 2,
+            product: "HGLG11",
+            eventType: "Rendimento",
+            paymentDate: "2026-11-16",
+            institution: "Banco",
+            quantity: "2",
+            unitPrice: "1.17",
+            netValue: "2.34",
+          },
+        ],
+      }),
+    ).resolves.toEqual({ importId: "provento-import" });
+
+    expect(transaction.insert).toHaveBeenCalledWith(imports);
+    expect(transaction.insert).toHaveBeenCalledWith(b3ProventoItems);
+    expect(persisted[1]).toEqual([
+      expect.objectContaining({
+        userId: "owner-1",
+        importId: "provento-import",
+        product: "HGLG11",
+        netValue: "2.34",
+      }),
+    ]);
+  });
+
   it("appends a new dated snapshot and retains the previous snapshot", async () => {
     const insertedSnapshots: Array<Record<string, unknown>> = [];
     let importSequence = 0;
@@ -1843,6 +1898,86 @@ describe("import repository", () => {
       }),
     ]);
     expect(mocks.client.transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("compares a new position snapshot with the latest earlier snapshot", async () => {
+    const inserted = vi.fn();
+    inserted
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-import" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-snapshot" }] }),
+      })
+      .mockReturnValueOnce({
+        values: () => ({ returning: async () => [{ id: "new-position" }] }),
+      });
+    const previousPosition = {
+      product: "Ativo",
+      quantity: "1",
+      totalValue: "1000",
+      unitPrice: "1000",
+      valuationSource: "CURVA",
+      assetCode: null,
+      institution: "Banco A",
+      issuer: "Emissor A",
+      indexer: "CDI",
+      regimeType: "PÓS-FIXADO",
+      issuedAt: "2025-01-01",
+      maturityAt: "2028-01-01",
+    };
+    const transaction = {
+      ...emptyImportGuard(),
+      insert: inserted,
+      select: vi.fn((fields?: unknown) => ({
+        from: (table: unknown) => {
+          if (table === positionSnapshots) {
+            const query: Record<string, unknown> = {};
+            query.innerJoin = () => query;
+            query.where = () => query;
+            query.orderBy = () => query;
+            query.limit = async () => [
+              { id: "previous-snapshot", referenceDate: "2026-09-17" },
+            ];
+            return query;
+          }
+          if (table === positionItems) {
+            return { where: async () => [previousPosition] };
+          }
+          return transactionDefaultQuery();
+        },
+      })),
+    };
+    function transactionDefaultQuery() {
+      const query: Record<string, unknown> = {};
+      query.where = () => query;
+      query.innerJoin = () => query;
+      query.orderBy = () => query;
+      query.limit = async () => [];
+      query.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve([]).then(resolve);
+      return query;
+    }
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(withManualRead(transaction)),
+    );
+
+    const result = await importRepository.create({
+      fileName: "new.xlsx",
+      fileHash: "new-hash",
+      documentType: "B3_POSITION_XLSX",
+      referenceDate: "2026-09-18",
+      positions,
+    });
+
+    expect(result).toMatchObject({
+      positionChangeSummary: {
+        comparisonAvailable: true,
+        previousReferenceDate: "2026-09-17",
+        currentReferenceDate: "2026-09-18",
+      },
+    });
+    expect(transaction.select).toHaveBeenCalled();
   });
 
   it("persists a new liquidity fact with its source position and snapshot", async () => {
@@ -2387,6 +2522,161 @@ describe("import repository", () => {
     );
   });
 
+  it("lists snapshots with stable asset identities and leaves empty snapshots empty", async () => {
+    const snapshots = [
+      {
+        id: "snapshot-1",
+        referenceDate: null,
+        importReferenceDate: "2026-10-01",
+        createdAt: new Date("2026-10-01T12:00:00Z"),
+        importedAt: new Date("2026-10-01T12:01:00Z"),
+        source: "B3",
+      },
+      {
+        id: "snapshot-empty",
+        referenceDate: "2026-10-02",
+        importReferenceDate: null,
+        createdAt: new Date("2026-10-02T12:00:00Z"),
+        importedAt: new Date("2026-10-02T12:01:00Z"),
+        source: "B3",
+      },
+    ];
+    const snapshotQuery: Record<string, unknown> = {};
+    snapshotQuery.from = () => snapshotQuery;
+    snapshotQuery.innerJoin = () => snapshotQuery;
+    snapshotQuery.where = () => snapshotQuery;
+    snapshotQuery.orderBy = async () => snapshots;
+
+    const rows = [
+      {
+        snapshotId: "snapshot-1",
+        product: "CDB Banco A",
+        institution: "Banco A",
+        issuer: "Emissor A",
+        assetCode: "cdb1",
+        indexer: null,
+        regimeType: null,
+        issuedAt: null,
+        maturityAt: "2028-01-01",
+        totalValue: "1000",
+        valuationSource: "CURVA",
+      },
+      {
+        snapshotId: "snapshot-1",
+        product: "CDB Banco B",
+        institution: "Banco B",
+        issuer: "Emissor B",
+        assetCode: null,
+        indexer: null,
+        regimeType: null,
+        issuedAt: "2025-01-01",
+        maturityAt: "2027-01-01",
+        totalValue: "2000",
+        valuationSource: "CURVA",
+      },
+      {
+        snapshotId: "snapshot-1",
+        product: "CDB sem instituição informada",
+        institution: null,
+        issuer: null,
+        assetCode: "cdb3",
+        indexer: null,
+        regimeType: null,
+        issuedAt: null,
+        maturityAt: "2027-06-01",
+        totalValue: "500",
+        valuationSource: "CURVA",
+      },
+      {
+        snapshotId: "snapshot-1",
+        product: "Sem identidade completa",
+        institution: null,
+        issuer: null,
+        assetCode: null,
+        indexer: null,
+        regimeType: null,
+        issuedAt: null,
+        maturityAt: null,
+        totalValue: "3000",
+        valuationSource: "MANUAL",
+      },
+    ];
+    const positionQuery: Record<string, unknown> = {};
+    positionQuery.from = () => positionQuery;
+    positionQuery.where = async () => rows;
+    mocks.client.select
+      .mockReturnValueOnce(snapshotQuery)
+      .mockReturnValueOnce(positionQuery);
+
+    await expect(
+      importRepository.listPositionSnapshots(),
+    ).resolves.toMatchObject([
+      {
+        id: "snapshot-1",
+        referenceDate: "2026-10-01",
+        positions: [
+          expect.objectContaining({ identity: expect.any(String) }),
+          expect.objectContaining({ identity: expect.any(String) }),
+          expect.objectContaining({ identity: expect.any(String) }),
+          expect.objectContaining({ identity: null }),
+        ],
+      },
+      { id: "snapshot-empty", positions: [] },
+    ]);
+  });
+
+  it("returns no snapshots without issuing the position query", async () => {
+    const query: Record<string, unknown> = {};
+    query.from = () => query;
+    query.innerJoin = () => query;
+    query.where = () => query;
+    query.orderBy = async () => [];
+    mocks.client.select.mockReturnValue(query);
+
+    await expect(importRepository.listPositionSnapshots()).resolves.toEqual([]);
+    expect(mocks.client.select).toHaveBeenCalledOnce();
+  });
+
+  it("logs and rethrows snapshot history query failures", async () => {
+    mocks.client.select.mockImplementation(() => {
+      throw new Error("snapshot history unavailable");
+    });
+
+    await expect(
+      importRepository.listPositionSnapshots("request-snapshot-history"),
+    ).rejects.toThrow("snapshot history unavailable");
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_position_snapshot_history_query_failed",
+      expect.objectContaining({ requestId: "request-snapshot-history" }),
+    );
+  });
+
+  it("lists imported proventos and logs query failures", async () => {
+    const rows = [{ id: "provento-1", product: "HGLG11", netValue: "2.34" }];
+    const query: Record<string, unknown> = {};
+    query.from = () => query;
+    query.innerJoin = () => query;
+    query.where = () => query;
+    query.orderBy = async () => rows;
+    mocks.client.select.mockReturnValue(query);
+
+    await expect(importRepository.listB3Proventos()).resolves.toEqual(rows);
+    expect(mocks.client.select).toHaveBeenCalledWith(
+      expect.objectContaining({ id: b3ProventoItems.id }),
+    );
+
+    mocks.client.select.mockImplementation(() => {
+      throw new Error("proventos read failed");
+    });
+    await expect(importRepository.listB3Proventos("request-1")).rejects.toThrow(
+      "proventos read failed",
+    );
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "database_b3_proventos_query_failed",
+      expect.objectContaining({ requestId: "request-1" }),
+    );
+  });
+
   it("persists reconciliation decisions for user-owned rows and rejects conflicting links", async () => {
     const tradeId = "11111111-1111-4111-8111-111111111111";
     const movementId = "22222222-2222-4222-8222-222222222222";
@@ -2585,6 +2875,25 @@ describe("import repository", () => {
       importRepository.deleteByDocumentType("B3_MOVEMENT_XLSX"),
     ).resolves.toBe(1);
     expect(transaction.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes proventos items together with their imported source", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      select: vi.fn().mockReturnValue({
+        from: () => ({ where: async () => [{ id: "provento-import" }] }),
+      }),
+      delete: vi.fn().mockReturnValue({ where }),
+    };
+    mocks.client.transaction.mockImplementation((callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      importRepository.deleteByDocumentType("B3_PROVENTO_XLSX"),
+    ).resolves.toBe(1);
+    expect(transaction.delete).toHaveBeenCalledWith(b3ProventoItems);
+    expect(transaction.delete).toHaveBeenCalledWith(imports);
   });
 
   it("preserves a B3 movement import when any of its rows has reconciliation history", async () => {

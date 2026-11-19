@@ -102,6 +102,13 @@ describe("FinancialStatementImportService", () => {
         isDefault: true,
         active: true,
       },
+      {
+        id: "923e4567-e89b-42d3-a456-426614174000",
+        kind: "EXPENSE",
+        name: "Fatura do cartão",
+        isDefault: true,
+        active: true,
+      },
       ...[
         ["EXPENSE", "Transporte"],
         ["EXPENSE", "Saúde"],
@@ -151,6 +158,27 @@ describe("FinancialStatementImportService", () => {
     );
   });
 
+  it.each([
+    [46_000, "1,234", "DMY", "DOT"],
+    [undefined, "1.234", "DMY", "COMMA"],
+    ["14/11/2026", "1.234,56", "DMY", "COMMA"],
+    ["", "1234.", "DMY", "COMMA"],
+  ])(
+    "uses safe default mapping for date/value sample %s / %s",
+    async (date, amount, dateFormat, decimalSeparator) => {
+      parseStatementFile.mockReturnValue({
+        hash: "a".repeat(64),
+        headers: ["Date", "Description", "Amount"],
+        rows: [{ sourceRow: 2, values: [date, "Purchase", amount] }],
+      });
+      const result = await financialStatementImportService.preview({
+        name: "statement.csv",
+        buffer: Buffer.from("x"),
+      });
+      expect(result.mapping).toMatchObject({ dateFormat, decimalSeparator });
+    },
+  );
+
   it("previews mapped rows and marks possible duplicates", async () => {
     findPossibleDuplicateRows.mockResolvedValue([2]);
     const result = await financialStatementImportService.preview(
@@ -197,6 +225,31 @@ describe("FinancialStatementImportService", () => {
     });
   });
 
+  it("infers dates and decimal formatting for debit-credit statements", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Posting Date", "Memo", "Debit", "Credit"],
+      rows: [
+        {
+          sourceRow: 2,
+          values: ["2026-11-14", "Compra", "10.50", ""],
+        },
+      ],
+    });
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+    expect(result.mapping).toEqual({
+      dateColumn: 0,
+      descriptionColumn: 1,
+      debitColumn: 2,
+      creditColumn: 3,
+      dateFormat: "ISO",
+      decimalSeparator: "DOT",
+    });
+  });
+
   it("uses MDY only when the sample makes the month-first order clear", async () => {
     parseStatementFile.mockReturnValue({
       hash: "a".repeat(64),
@@ -215,6 +268,104 @@ describe("FinancialStatementImportService", () => {
     expect(result.mapping).toMatchObject({
       dateFormat: "MDY",
       decimalSeparator: "DOT",
+    });
+  });
+
+  it("uses Brazilian defaults when dates and values are workbook serials", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Date", "Description", "Amount"],
+      rows: [
+        {
+          sourceRow: 2,
+          values: [46_000, "Purchase", 10.5],
+        },
+      ],
+    });
+    const result = await financialStatementImportService.preview({
+      name: "statement.xlsx",
+      buffer: Buffer.from("x"),
+    });
+
+    expect(result.mapping).toMatchObject({
+      dateColumn: 0,
+      descriptionColumn: 1,
+      amountColumn: 2,
+      dateFormat: "DMY",
+      decimalSeparator: "COMMA",
+    });
+  });
+
+  it("keeps a recognizable mapping and marks blank dates as row errors", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Valor"],
+      rows: [{ sourceRow: 2, values: ["", "Compra", 10] }],
+    });
+    parseStatementRows.mockReturnValue([
+      {
+        sourceRow: 2,
+        kind: null,
+        description: "Compra",
+        actualDate: null,
+        amount: 10,
+        errors: ["Confira a data e o formato selecionado."],
+      },
+    ]);
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+
+    expect(result.mapping).toMatchObject({
+      dateFormat: "DMY",
+      decimalSeparator: "COMMA",
+    });
+    expect(result.rows[0]).toMatchObject({
+      actualDate: null,
+      categoryId: null,
+      categorySource: null,
+    });
+  });
+
+  it("uses the safe date fallback when a date header contains unrecognized values", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Valor"],
+      rows: [{ sourceRow: 2, values: ["unrecognized", "Compra", 10] }],
+    });
+    parseStatementRows.mockReturnValue([
+      {
+        sourceRow: 2,
+        kind: null,
+        description: "Compra",
+        actualDate: null,
+        amount: 10,
+        errors: ["Confira a data e o formato selecionado."],
+      },
+    ]);
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+    expect(result.mapping.dateFormat).toBe("DMY");
+  });
+
+  it("keeps valid columns when the sample amount cells are missing", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Valor"],
+      rows: [{ sourceRow: 2, values: ["14/11/2026", "Compra", undefined] }],
+    });
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+    expect(result.mapping).toMatchObject({
+      dateColumn: 0,
+      descriptionColumn: 1,
+      amountColumn: 2,
+      decimalSeparator: "COMMA",
     });
   });
 
@@ -297,6 +448,27 @@ describe("FinancialStatementImportService", () => {
     );
   });
 
+  it("rejects multiple unlabelled description candidates", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["A", "B", "C", "D"],
+      rows: [
+        {
+          sourceRow: 2,
+          values: ["14/11/2026", "Compra A", "Compra B", "10,00"],
+        },
+      ],
+    });
+    await expect(
+      financialStatementImportService.preview({
+        name: "statement.csv",
+        buffer: Buffer.from("x"),
+      }),
+    ).rejects.toThrow(
+      "Não foi possível identificar automaticamente as colunas deste arquivo.",
+    );
+  });
+
   it("rejects equally plausible amount columns instead of choosing the first", async () => {
     parseStatementFile.mockReturnValue({
       hash: "a".repeat(64),
@@ -318,6 +490,27 @@ describe("FinancialStatementImportService", () => {
     );
   });
 
+  it("rejects equally plausible debit columns instead of treating one as authoritative", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Débito", "Debit", "Crédito"],
+      rows: [
+        {
+          sourceRow: 2,
+          values: ["14/11/2026", "Compra", "10,00", "10,00", ""],
+        },
+      ],
+    });
+    await expect(
+      financialStatementImportService.preview({
+        name: "statement.csv",
+        buffer: Buffer.from("x"),
+      }),
+    ).rejects.toThrow(
+      "Não foi possível identificar com segurança as colunas de entrada e saída deste arquivo.",
+    );
+  });
+
   it("does not infer a plain integer identifier as an amount", async () => {
     parseStatementFile.mockReturnValue({
       hash: "a".repeat(64),
@@ -336,6 +529,45 @@ describe("FinancialStatementImportService", () => {
       }),
     ).rejects.toThrow(
       "Não foi possível identificar automaticamente a coluna de valores deste arquivo.",
+    );
+  });
+
+  it("uses signed currency evidence when an amount header is missing", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Referência", "Movimento", "Extra"],
+      rows: [
+        {
+          sourceRow: 2,
+          values: ["14/11/2026", "Compra", "ABC123", "-R$ 10,50", ""],
+        },
+      ],
+    });
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+    expect(result.mapping).toMatchObject({
+      dateColumn: 0,
+      descriptionColumn: 1,
+      amountColumn: 3,
+      decimalSeparator: "COMMA",
+    });
+  });
+
+  it("rejects data when it cannot identify a date column", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Referência", "Descrição", "Outro"],
+      rows: [{ sourceRow: 2, values: ["ABC123", "Compra", "10"] }],
+    });
+    await expect(
+      financialStatementImportService.preview({
+        name: "statement.csv",
+        buffer: Buffer.from("x"),
+      }),
+    ).rejects.toThrow(
+      "Não foi possível identificar automaticamente as colunas deste arquivo.",
     );
   });
 
@@ -385,6 +617,25 @@ describe("FinancialStatementImportService", () => {
     );
   });
 
+  it("rejects mixed date formats instead of silently changing their meaning", async () => {
+    parseStatementFile.mockReturnValue({
+      hash: "a".repeat(64),
+      headers: ["Data", "Descrição", "Valor"],
+      rows: [
+        { sourceRow: 2, values: ["14/11/2026", "Compra A", "10,50"] },
+        { sourceRow: 3, values: ["2026-11-15", "Compra B", "10,50"] },
+      ],
+    });
+    await expect(
+      financialStatementImportService.preview({
+        name: "statement.csv",
+        buffer: Buffer.from("x"),
+      }),
+    ).rejects.toThrow(
+      "Não foi possível reconhecer com segurança as datas deste arquivo.",
+    );
+  });
+
   it("prefills an exact description and same-kind saved category", async () => {
     parseStatementRows.mockReturnValue([
       {
@@ -416,6 +667,46 @@ describe("FinancialStatementImportService", () => {
     expect(result.rows[0]).toMatchObject({
       categoryId: "123e4567-e89b-42d3-a456-426614174000",
       categorySource: "saved",
+    });
+  });
+
+  it("ignores saved category rules that no longer match an active category", async () => {
+    listSavedCategoryRules.mockResolvedValue([
+      {
+        kind: "EXPENSE",
+        descriptionKey: "compra",
+        categoryId: "missing-category-id",
+      },
+    ]);
+    const result = await financialStatementImportService.preview(
+      { name: "statement.csv", buffer: Buffer.from("x") },
+      {
+        dateColumn: 0,
+        descriptionColumn: 1,
+        amountColumn: 2,
+        dateFormat: "DMY",
+        decimalSeparator: "COMMA",
+      },
+    );
+
+    expect(result.rows[0]).toMatchObject({
+      categoryId: null,
+      categorySource: null,
+    });
+  });
+
+  it("marks an already imported source row without proposing it again", async () => {
+    listAlreadyImportedRows.mockResolvedValue([{ sourceRow: 2 }]);
+    const result = await financialStatementImportService.preview({
+      name: "statement.csv",
+      buffer: Buffer.from("x"),
+    });
+
+    expect(listSavedCategoryRules).toHaveBeenCalledWith([]);
+    expect(findPossibleDuplicateRows).toHaveBeenCalledWith([]);
+    expect(result.rows[0]).toMatchObject({
+      alreadyImported: true,
+      possibleDuplicate: false,
     });
   });
 
@@ -522,6 +813,8 @@ describe("FinancialStatementImportService", () => {
     ["EXPENSE", "Compra no debito: PATY LANCHES", "Alimentação"],
     ["EXPENSE", "Debito Iof Conta Global De Inv", "Impostos e taxas"],
     ["EXPENSE", "Debito B3: NOTA BOV 12/11/2026", "Investimentos"],
+    ["EXPENSE", "Pagamento fatura cartao Inter", "Fatura do cartão"],
+    ["EXPENSE", "Debito da fatura do cartão", "Fatura do cartão"],
     ["INCOME", "SALÁRIO FOLHA DE PAGAMENTO", "Salário"],
     ["INCOME", "ALUGUEL RECEBIDO", "Renda de aluguel"],
     ["INCOME", "BENEFÍCIO INSS", "Benefícios"],
@@ -571,6 +864,7 @@ describe("FinancialStatementImportService", () => {
 
   it.each([
     ["EXPENSE", "MERCADO LIVRE COMPRA ONLINE"],
+    ["EXPENSE", "Fatura do Inter"],
     ["EXPENSE", "MERCADO PAGO COMPRA ONLINE"],
     ["INCOME", "UBER *TRIP AJUSTE"],
     ["INCOME", "Credito Evento B3: VENDA DE ATIVO XPML11"],
@@ -674,6 +968,28 @@ describe("FinancialStatementImportService", () => {
     );
   });
 
+  it("does not compare rows already imported from the same statement", async () => {
+    listAlreadyImportedRows.mockResolvedValue([{ sourceRow: 2 }]);
+    findPossibleDuplicateRows.mockResolvedValue([]);
+    const result = await financialStatementImportService.confirm({
+      fileHash: "a".repeat(64),
+      rows: [
+        {
+          sourceRow: 2,
+          kind: "EXPENSE",
+          description: "Compra",
+          categoryId: "123e4567-e89b-42d3-a456-426614174000",
+          actualDate: "2026-11-14",
+          actualAmount: 10,
+        },
+      ],
+    });
+
+    expect(findPossibleDuplicateRows).toHaveBeenCalledWith([]);
+    expect(confirmRows).toHaveBeenCalledOnce();
+    expect(result.possibleDuplicateCount).toBe(0);
+  });
+
   it("passes the user's category-memory opt-out to persistence", async () => {
     await financialStatementImportService.confirm({
       fileHash: "a".repeat(64),
@@ -711,6 +1027,14 @@ describe("FinancialStatementImportService", () => {
     await expect(
       financialStatementImportService.confirm(input),
     ).rejects.toThrow("categoria ativa compatível");
+    expect(confirmRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed confirmation data before reading categories", async () => {
+    await expect(
+      financialStatementImportService.confirm({ rows: [] }),
+    ).rejects.toThrow("Revise os lançamentos antes de confirmar.");
+    expect(listCategories).not.toHaveBeenCalled();
     expect(confirmRows).not.toHaveBeenCalled();
   });
 });

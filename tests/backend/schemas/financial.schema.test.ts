@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  financialCategoryCreateSchema,
-  financialCategoryUpdateSchema,
   financialEntryCreateSchema,
   financialEntryUpdateSchema,
 } from "@/backend/schemas/financial.schema";
@@ -110,27 +108,5 @@ describe("financial schemas", () => {
         actualDate: "2026-10-02",
       }).success,
     ).toBe(false);
-  });
-
-  it("normalizes category creation and requires a change for category updates", () => {
-    expect(
-      financialCategoryCreateSchema.parse({
-        kind: "INCOME",
-        name: " Salário ",
-      }),
-    ).toEqual({ kind: "INCOME", name: "Salário" });
-    expect(
-      financialCategoryCreateSchema.safeParse({ kind: "OTHER", name: "X" })
-        .success,
-    ).toBe(false);
-    expect(
-      financialCategoryUpdateSchema.safeParse({ id: categoryId }).success,
-    ).toBe(false);
-    expect(
-      financialCategoryUpdateSchema.safeParse({
-        id: categoryId,
-        active: false,
-      }).success,
-    ).toBe(true);
   });
 });

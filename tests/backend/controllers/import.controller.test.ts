@@ -8,6 +8,7 @@ const { service, logger } = vi.hoisted(() => ({
     delete: vi.fn(),
     reconciliationSummary: vi.fn(),
     saveReconciliationDecisions: vi.fn(),
+    listProventos: vi.fn(),
   },
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -56,6 +57,19 @@ describe("ImportController", () => {
     const response = await importController.reconciliationSummary("request-1");
     await expect(response.json()).resolves.toEqual({ candidates: [] });
     expect(service.reconciliationSummary).toHaveBeenCalledWith("request-1");
+  });
+
+  it("returns the proventos available for the current request", async () => {
+    const result = {
+      items: [],
+      latestImports: { received: null, upcoming: null },
+    };
+    service.listProventos.mockResolvedValue(result);
+
+    const response = await importController.listProventos("request-proventos");
+
+    await expect(response.json()).resolves.toEqual(result);
+    expect(service.listProventos).toHaveBeenCalledWith("request-proventos");
   });
 
   it("parses and validates reconciliation decisions through the service", async () => {
@@ -208,6 +222,36 @@ describe("ImportController", () => {
       count: 2,
       documentType: "B3_TRADING_XLSX",
       message: "2 negociação(ões) importada(s) com sucesso.",
+    });
+  });
+
+  it("counts and confirms proventos with their import-specific message", async () => {
+    const proventoPreview = {
+      hash: "e".repeat(64),
+      documentType: "B3_PROVENTO_XLSX" as const,
+      proventos: [{ product: "HGLG11" }, { product: "XPLG11" }],
+    };
+    service.previewWithReconciliation.mockResolvedValue(proventoPreview);
+
+    const previewResponse = await importController.preview(
+      requestWithFile(),
+      "request-provento",
+    );
+    await expect(previewResponse.json()).resolves.toMatchObject({ count: 2 });
+
+    service.confirm.mockResolvedValue({
+      preview: proventoPreview,
+      result: { importId: "provento-import" },
+      duplicate: false,
+    });
+    const confirmResponse = await importController.confirm(
+      requestWithFile(),
+      "request-provento",
+    );
+    await expect(confirmResponse.json()).resolves.toMatchObject({
+      count: 2,
+      documentType: "B3_PROVENTO_XLSX",
+      message: "2 provento(s) importado(s) com sucesso.",
     });
   });
 

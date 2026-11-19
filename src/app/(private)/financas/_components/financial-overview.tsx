@@ -2,7 +2,6 @@
 
 import { FinancialEntryDialog as EntryDialog } from "@/app/(private)/financas/_components/financial-entry-dialog";
 import { FinancialEntriesTable } from "@/app/(private)/financas/_components/financial-entries-table";
-import { FinancialCategoryManager } from "@/app/(private)/financas/_components/financial-category-manager";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
 import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
@@ -20,7 +19,6 @@ import {
   CalendarClock,
   FileSpreadsheet,
   Plus,
-  Tags,
 } from "lucide-react";
 import { apiRequest } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
@@ -136,7 +134,6 @@ export function FinancialOverview() {
   const [recurrencesOpen, setRecurrencesOpen] = useState(
     searchParams.get("gerenciar") === "recorrencias",
   );
-  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [statementImportOpen, setStatementImportOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingRecurrenceId, setEditingRecurrenceId] = useState<string | null>(
@@ -202,14 +199,6 @@ export function FinancialOverview() {
               <ArrowRight className="size-4" />
             </Button>
           </div>
-          <Button
-            variant="outline"
-            disabled={!canEdit}
-            onClick={() => setCategoriesOpen(true)}
-          >
-            <Tags className="mr-2 size-4" />
-            Categorias
-          </Button>
           <Button
             variant="outline"
             disabled={!canEdit}
@@ -396,10 +385,6 @@ export function FinancialOverview() {
         readOnly={!canEdit}
         editRecurrenceId={editingRecurrenceId}
         onEditRecurrenceHandled={clearEditingRecurrenceRequest}
-      />
-      <FinancialCategoryManager
-        open={categoriesOpen}
-        onOpenChange={setCategoriesOpen}
       />
       <FinancialStatementImportDialog
         open={statementImportOpen}

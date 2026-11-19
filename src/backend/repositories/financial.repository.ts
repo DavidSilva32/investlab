@@ -19,16 +19,6 @@ export type FinancialCategoryRecord = {
   active: boolean;
 };
 
-export type FinancialCategoryInput = {
-  kind: string;
-  name: string;
-};
-
-export type FinancialCategoryUpdate = {
-  nameOverride: string | null;
-  active: boolean;
-};
-
 export type FinancialEntryInput = {
   kind: string;
   description: string;
@@ -80,69 +70,6 @@ export class FinancialRepository {
         ),
       )
       .orderBy(asc(financialCategories.kind), asc(displayName));
-  }
-
-  async createCategory(input: FinancialCategoryInput) {
-    const userId = requireDataOwnerId();
-    const [category] = await getDatabaseClient()
-      .insert(financialCategories)
-      .values({ ...input, userId, isDefault: false })
-      .returning();
-    return category;
-  }
-
-  async updateOwnedCategory(id: string, input: FinancialCategoryInput) {
-    const userId = requireDataOwnerId();
-    const [category] = await getDatabaseClient()
-      .update(financialCategories)
-      .set({ ...input, updatedAt: new Date() })
-      .where(
-        and(
-          eq(financialCategories.id, id),
-          eq(financialCategories.userId, userId),
-          eq(financialCategories.isDefault, false),
-        ),
-      )
-      .returning();
-    return category ?? null;
-  }
-
-  async saveDefaultCategoryPreference(
-    categoryId: string,
-    input: FinancialCategoryUpdate,
-  ) {
-    const userId = requireDataOwnerId();
-    await getDatabaseClient()
-      .insert(financialCategoryPreferences)
-      .values({ ...input, userId, categoryId, updatedAt: new Date() })
-      .onConflictDoUpdate({
-        target: [
-          financialCategoryPreferences.userId,
-          financialCategoryPreferences.categoryId,
-        ],
-        set: { ...input, updatedAt: new Date() },
-      });
-    return (
-      (await this.listCategories()).find(
-        (category) => category.id === categoryId,
-      ) ?? null
-    );
-  }
-
-  async setOwnedCategoryActive(id: string, active: boolean) {
-    const userId = requireDataOwnerId();
-    const [category] = await getDatabaseClient()
-      .update(financialCategories)
-      .set({ active, updatedAt: new Date() })
-      .where(
-        and(
-          eq(financialCategories.id, id),
-          eq(financialCategories.userId, userId),
-          eq(financialCategories.isDefault, false),
-        ),
-      )
-      .returning();
-    return category ?? null;
   }
 
   async listEntries(startDate: string, endDate: string) {

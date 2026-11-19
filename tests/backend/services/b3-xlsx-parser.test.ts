@@ -9,6 +9,7 @@ const positionParser = vi.hoisted(() => vi.fn());
 const positionDocumentParser = vi.hoisted(() => vi.fn());
 const movementParser = vi.hoisted(() => vi.fn());
 const tradingParser = vi.hoisted(() => vi.fn());
+const proventoParser = vi.hoisted(() => vi.fn());
 vi.mock("@/backend/services/b3-position-xlsx-parser", () => ({
   b3PositionXlsxParser: {
     parse: positionParser,
@@ -20,6 +21,9 @@ vi.mock("@/backend/services/b3-movement-xlsx-parser", () => ({
 }));
 vi.mock("@/backend/services/b3-trading-xlsx-parser", () => ({
   parseB3TradingXlsx: tradingParser,
+}));
+vi.mock("@/backend/services/b3-provento-xlsx-parser", () => ({
+  parseB3ProventoXlsx: proventoParser,
 }));
 
 import { parseB3Xlsx } from "@/backend/services/b3-xlsx-parser";
@@ -59,6 +63,44 @@ describe("parseB3Xlsx", () => {
     expect(positionParser).not.toHaveBeenCalled();
   });
 
+  it("detects and delegates B3 dividend statements", () => {
+    proventoParser.mockReturnValue([{ ticker: "HGLG11", amount: 2.34 }]);
+    expect(
+      parseB3Xlsx(
+        workbookBuffer([
+          "Produto",
+          "Tipo de Evento",
+          "Instituição",
+          "Pagamento",
+          "Quantidade",
+          "Preço Unitário",
+          "Valor Líquido",
+        ]),
+      ),
+    ).toEqual({
+      documentType: "B3_PROVENTO_XLSX",
+      proventos: [{ ticker: "HGLG11", amount: 2.34 }],
+    });
+    expect(proventoParser).toHaveBeenCalledOnce();
+  });
+
+  it("accepts the B3 dividend statement payment forecast header", () => {
+    proventoParser.mockReturnValue([]);
+    expect(
+      parseB3Xlsx(
+        workbookBuffer([
+          "Produto",
+          "Tipo de Evento",
+          "Instituição",
+          "Previsão de Pagamento",
+          "Quantidade",
+          "Preço Unitário",
+          "Valor Líquido",
+        ]),
+      ),
+    ).toEqual({ documentType: "B3_PROVENTO_XLSX", proventos: [] });
+  });
+
   it("skips missing worksheets while detecting a movement document", () => {
     const movementSheet = XLSX.utils.aoa_to_sheet([
       ["Entrada/Saída", "Movimentação", "Produto"],
@@ -85,6 +127,12 @@ describe("parseB3Xlsx", () => {
     expect(positionDocumentParser).not.toHaveBeenCalled();
     read.mockImplementation(
       (XLSX as unknown as { __actualRead: typeof XLSX.read }).__actualRead,
+    );
+  });
+
+  it("rejects a populated worksheet with unrelated headers", () => {
+    expect(() => parseB3Xlsx(workbookBuffer(["Data", "Valor"]))).toThrow(
+      "A planilha não corresponde a um formato B3 reconhecido.",
     );
   });
   it("delegates recognized position worksheets to the position parser", () => {

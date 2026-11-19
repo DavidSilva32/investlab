@@ -2,9 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   listCategories: vi.fn(),
-  createCategory: vi.fn(),
-  updateCategory: vi.fn(),
-  deleteCategory: vi.fn(),
   listEntries: vi.fn(),
   createEntry: vi.fn(),
   updateEntry: vi.fn(),
@@ -18,9 +15,6 @@ const state = vi.hoisted(() => ({
 vi.mock("@/backend/services/financial.service", () => ({
   financialService: {
     listCategories: state.listCategories,
-    createCategory: state.createCategory,
-    updateCategory: state.updateCategory,
-    deleteCategory: state.deleteCategory,
     listEntries: state.listEntries,
     createEntry: state.createEntry,
     updateEntry: state.updateEntry,
@@ -51,27 +45,6 @@ describe("FinancialController", () => {
       "financial_categories_loaded",
       expect.objectContaining({ requestId: "request-a", count: 1 }),
     );
-
-    state.createCategory.mockResolvedValue({ id: "created-category" });
-    const createdCategory = await controller.createCategory({}, "request-b");
-    expect(createdCategory.status).toBe(201);
-    expect(await createdCategory.json()).toMatchObject({
-      id: "created-category",
-      message: "Categoria cadastrada.",
-    });
-
-    state.updateCategory.mockResolvedValue({ id: "updated-category" });
-    const updatedCategory = await controller.updateCategory({}, "request-c");
-    expect(await updatedCategory.json()).toMatchObject({
-      id: "updated-category",
-      message: "Categoria atualizada.",
-    });
-    state.deleteCategory.mockResolvedValue({ id: "hidden-category" });
-    const deletedCategory = await controller.deleteCategory("id", "request-d");
-    expect(await deletedCategory.json()).toMatchObject({
-      id: "hidden-category",
-      message: "Categoria desativada.",
-    });
 
     state.listEntries.mockResolvedValue({ month: "2026-10", entries: [] });
     const entries = await controller.getEntries("2026-10", "request-e");

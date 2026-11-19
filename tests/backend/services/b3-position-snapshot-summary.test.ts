@@ -105,16 +105,37 @@ describe("B3 position snapshot comparison", () => {
     ).toBeNull();
   });
 
+  it("builds a fallback identity from the full fixed-income instrument terms", () => {
+    const fixedIncome = position({ assetCode: null, regimeType: "Pos-Fixado" });
+    expect(getB3PositionSnapshotIdentity(fixedIncome)).toBe(
+      getB3PositionSnapshotIdentity(
+        position({
+          assetCode: " ",
+          product: " CDB   Banco A ",
+          institution: " banco a ",
+          issuer: " banco a s.a. ",
+          indexer: " cdi ",
+          regimeType: " pos-fixado ",
+        }),
+      ),
+    );
+    expect(
+      getB3PositionSnapshotIdentity(
+        position({ assetCode: null, maturityAt: null }),
+      ),
+    ).toBeNull();
+  });
+
   it("does not report decimal formatting differences as a changed position", () => {
     const result = summarizeB3PositionSnapshotChange(
-      [position({ quantity: "10.00", totalValue: "100.0", unitPrice: "10" })],
+      [position({ quantity: "0", totalValue: "100.5", unitPrice: "10" })],
       "2026-11-18",
       {
         referenceDate: "2026-11-14",
         positions: [
           position({
-            quantity: "10",
-            totalValue: "100.00",
+            quantity: "-0.00",
+            totalValue: "0100.50",
             unitPrice: "10.00",
           }),
         ],
@@ -123,5 +144,55 @@ describe("B3 position snapshot comparison", () => {
 
     expect(result.updatedCount).toBe(0);
     expect(result.unchangedCount).toBe(1);
+  });
+
+  it("compares null and nonnumeric valuation fields without coercing them", () => {
+    const previousPosition = position({
+      unitPrice: null,
+      totalValue: "sem valor",
+      quantity: "10.00",
+    });
+    const result = summarizeB3PositionSnapshotChange(
+      [
+        position({
+          unitPrice: null,
+          totalValue: "sem valor",
+          quantity: "010.000",
+        }),
+      ],
+      "2026-11-18",
+      { referenceDate: "2026-11-14", positions: [previousPosition] },
+    );
+
+    expect(result).toMatchObject({ updatedCount: 0, unchangedCount: 1 });
+  });
+
+  it("detects quantity, unit price, and valuation source changes", () => {
+    const previousPosition = position({ assetCode: null });
+    const currentPosition = position({
+      assetCode: null,
+      quantity: "11",
+      unitPrice: "10.50",
+      valuationSource: "MARKET",
+    });
+    expect(
+      summarizeB3PositionSnapshotChange([currentPosition], "2026-11-18", {
+        referenceDate: "2026-11-14",
+        positions: [previousPosition],
+      }),
+    ).toMatchObject({ updatedCount: 1, unchangedCount: 0 });
+  });
+
+  it("normalizes a negative nonzero numeric field when comparing snapshots", () => {
+    const result = summarizeB3PositionSnapshotChange(
+      [position({ quantity: "-1" })],
+      "2026-11-18",
+      {
+        referenceDate: "2026-11-14",
+        positions: [position({ quantity: "1" })],
+      },
+    );
+
+    expect(result).toMatchObject({ updatedCount: 1, unchangedCount: 0 });
   });
 });

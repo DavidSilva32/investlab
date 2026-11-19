@@ -19,9 +19,7 @@ function failure(error: unknown, requestId: string, operation: string) {
     {
       message: expected
         ? error.message
-        : operation === "read"
-          ? "Não foi possível carregar as categorias."
-          : "Não foi possível salvar a categoria.",
+        : "Não foi possível carregar as categorias.",
     },
     { status: expected ? error.statusCode : 500 },
   );
@@ -36,52 +34,6 @@ export const GET = withApiRequestLogging(
       return await financialController.getCategories(requestId);
     } catch (error) {
       return failure(error, requestId, "read");
-    }
-  },
-);
-
-export const POST = withApiRequestLogging(
-  "POST",
-  "/api/financial-categories",
-  async function POST(request: Request) {
-    const requestId = getApiRequestId(request);
-    try {
-      return await financialController.createCategory(
-        await request.json(),
-        requestId,
-      );
-    } catch (error) {
-      return failure(error, requestId, "create");
-    }
-  },
-);
-
-export const PATCH = withApiRequestLogging(
-  "PATCH",
-  "/api/financial-categories",
-  async function PATCH(request: Request) {
-    const requestId = getApiRequestId(request);
-    try {
-      return await financialController.updateCategory(
-        await request.json(),
-        requestId,
-      );
-    } catch (error) {
-      return failure(error, requestId, "update");
-    }
-  },
-);
-
-export const DELETE = withApiRequestLogging(
-  "DELETE",
-  "/api/financial-categories",
-  async function DELETE(request: Request) {
-    const requestId = getApiRequestId(request);
-    try {
-      const id = new URL(request.url).searchParams.get("id");
-      return await financialController.deleteCategory(id, requestId);
-    } catch (error) {
-      return failure(error, requestId, "delete");
     }
   },
 );

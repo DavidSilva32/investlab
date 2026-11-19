@@ -11,42 +11,6 @@ export class FinancialController {
     return Response.json({ categories });
   }
 
-  async createCategory(body: unknown, requestId: string) {
-    const category = await financialService.createCategory(body);
-    logger.info("financial_category_created", {
-      requestId,
-      categoryId: category.id,
-    });
-    return Response.json(
-      { ...category, message: "Categoria cadastrada." },
-      { status: 201 },
-    );
-  }
-
-  async updateCategory(body: unknown, requestId: string) {
-    const category = await financialService.updateCategory(body);
-    logger.info("financial_category_updated", {
-      requestId,
-      categoryId: category?.id,
-    });
-    return Response.json({
-      ...category,
-      message: "Categoria atualizada.",
-    });
-  }
-
-  async deleteCategory(id: string | null, requestId: string) {
-    const category = await financialService.deleteCategory(id);
-    logger.info("financial_category_deactivated", {
-      requestId,
-      categoryId: category?.id,
-    });
-    return Response.json({
-      ...category,
-      message: "Categoria desativada.",
-    });
-  }
-
   async getEntries(month: string | null, requestId: string) {
     const data = await financialService.listEntries(month);
     logger.info("financial_entries_loaded", {

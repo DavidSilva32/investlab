@@ -152,4 +152,147 @@ describe("FinancialMonthClose", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
   });
+
+  it("shows a completed close with missing totals and allows refreshing it", async () => {
+    const user = userEvent.setup();
+    const onClosed = vi.fn();
+    api.request.mockResolvedValueOnce(closed);
+    render(
+      <FinancialMonthClose
+        month="2026-10"
+        close={{
+          ...closed,
+          totals: {
+            ...closed.totals,
+            expectedBalance: null,
+            recordedBalance: null,
+          },
+        }}
+        readOnly={false}
+        onClosed={onClosed}
+      />,
+    );
+
+    expect(screen.getByText("Mês fechado")).toBeTruthy();
+    expect(screen.getByText(/Fechado em 31\/10\/2026/)).toBeTruthy();
+    expect(
+      screen.getByText("Previsto Sem registro · Realizado Sem registro"),
+    ).toBeTruthy();
+    const refreshButton = screen.getByRole("button", {
+      name: "Fechar novamente",
+    });
+    expect(refreshButton.className).toContain("outline");
+    await user.click(refreshButton);
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar fechamento" }),
+    );
+
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    expect(toast.success).toHaveBeenCalledWith(
+      "Mês fechado novamente com os dados atuais.",
+    );
+    expect(onClosed).toHaveBeenCalledOnce();
+  });
+
+  it("updates a close flagged for review and uses a safe error fallback", async () => {
+    const user = userEvent.setup();
+    const review = { ...closed, status: "needs_review" as const };
+    api.request.mockRejectedValueOnce("offline");
+    const { rerender } = render(
+      <FinancialMonthClose
+        month="2026-10"
+        close={review}
+        readOnly={false}
+        onClosed={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Revisar fechamento" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar fechamento" }),
+    );
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível fechar o mês.",
+      ),
+    );
+
+    rerender(
+      <FinancialMonthClose
+        month="2026-11"
+        close={review}
+        readOnly={false}
+        onClosed={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(/A revisão ficará disponível quando o mês terminar/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Revisar fechamento" }),
+    ).toBeNull();
+  });
+
+  it("updates a flagged close successfully and displays a current-month snapshot", async () => {
+    const user = userEvent.setup();
+    api.request.mockResolvedValueOnce(closed);
+    const { rerender } = render(
+      <FinancialMonthClose
+        month="2026-10"
+        close={{ ...closed, status: "needs_review" }}
+        readOnly={false}
+        onClosed={vi.fn()}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Revisar fechamento" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar fechamento" }),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Fechamento atualizado com os dados revisados.",
+      ),
+    );
+
+    rerender(
+      <FinancialMonthClose
+        month="2026-11"
+        close={closed}
+        readOnly={false}
+        onClosed={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(/Este é um retrato dos valores até agora/),
+    ).toBeTruthy();
+  });
+
+  it("shows an Error returned while saving a closure", async () => {
+    const user = userEvent.setup();
+    api.request.mockRejectedValueOnce(
+      new Error("Serviço temporariamente indisponível."),
+    );
+    render(
+      <FinancialMonthClose
+        month="2026-10"
+        close={null}
+        readOnly={false}
+        onClosed={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Fechar mês" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar fechamento" }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Serviço temporariamente indisponível.",
+      ),
+    );
+  });
 });
