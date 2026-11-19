@@ -11,8 +11,6 @@ import {
   type FinancialCloseTotals,
 } from "@/backend/repositories/financial-month-close.repository";
 import {
-  financialCategoryCreateSchema,
-  financialCategoryUpdateSchema,
   financialEntryCreateSchema,
   financialEntryUpdateSchema,
 } from "@/backend/schemas/financial.schema";
@@ -90,10 +88,6 @@ function monthKeysThrough(month: string) {
     const targetMonth = (((index % 12) + 12) % 12) + 1;
     return `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
   });
-}
-
-function normalizeName(value: string) {
-  return value.trim().toLocaleLowerCase("pt-BR");
 }
 
 function parseCents(value: string) {
@@ -221,73 +215,6 @@ function assertSchema<T>(
 export class FinancialService {
   async listCategories() {
     return financialRepository.listCategories();
-  }
-
-  async createCategory(body: unknown) {
-    const input = assertSchema(
-      financialCategoryCreateSchema,
-      body,
-      "Revise os dados da categoria.",
-    );
-    const duplicate = (await financialRepository.listCategories()).some(
-      (category) =>
-        category.kind === input.kind &&
-        normalizeName(category.name) === normalizeName(input.name),
-    );
-    if (duplicate) {
-      throw new ApplicationError("Já existe uma categoria com esse nome.", 409);
-    }
-    return financialRepository.createCategory(input);
-  }
-
-  async updateCategory(body: unknown) {
-    const input = assertSchema(
-      financialCategoryUpdateSchema,
-      body,
-      "Revise os dados da categoria.",
-    );
-    const current = await financialRepository.findCategory(input.id);
-    if (!current) throw new ApplicationError("Categoria não encontrada.", 404);
-    const name = input.name ?? current.name;
-    const duplicate = (await financialRepository.listCategories()).some(
-      (category) =>
-        category.id !== current.id &&
-        category.kind === current.kind &&
-        normalizeName(category.name) === normalizeName(name),
-    );
-    if (input.name !== undefined && duplicate) {
-      throw new ApplicationError("Já existe uma categoria com esse nome.", 409);
-    }
-    const active = input.active ?? current.active;
-    if (current.isDefault) {
-      return financialRepository.saveDefaultCategoryPreference(current.id, {
-        nameOverride: name === current.originalName ? null : name,
-        active,
-      });
-    }
-    if (current.userId === null) {
-      throw new ApplicationError(
-        "Não foi possível atualizar a categoria.",
-        500,
-      );
-    }
-    if (input.name !== undefined) {
-      await financialRepository.updateOwnedCategory(current.id, {
-        kind: current.kind,
-        name,
-      });
-    }
-    if (input.active !== undefined) {
-      await financialRepository.setOwnedCategoryActive(current.id, active);
-    }
-    return (await financialRepository.findCategory(current.id)) ?? null;
-  }
-
-  async deleteCategory(id: string | null) {
-    if (!id || !z.string().uuid().safeParse(id).success) {
-      throw new ApplicationError("Informe uma categoria válida.", 400);
-    }
-    return this.updateCategory({ id, active: false });
   }
 
   async listEntries(monthValue: string | null | undefined) {

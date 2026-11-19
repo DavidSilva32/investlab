@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
+import { FinancialCategoryPicker } from "@/app/(private)/financas/_components/financial-category-picker";
 import { Label } from "@/components/ui/label";
 import {
   formatAmountInput,
@@ -189,20 +190,15 @@ export function FinancialRecurrenceForm({
       </div>
       <div className="space-y-2">
         <Label>Categoria</Label>
-        <Select value={categoryId} onValueChange={setCategoryId}>
-          <SelectTrigger aria-label="Categoria da recorrência">
-            <SelectValue placeholder="Opcional" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories
-              .filter((category) => category.kind === kind && category.active)
-              .map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.name}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
+        <FinancialCategoryPicker
+          label="Categoria da recorrência"
+          categories={categories.filter(
+            (category) => category.kind === kind && category.active,
+          )}
+          value={categoryId}
+          onValueChange={setCategoryId}
+          placeholder="Opcional"
+        />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

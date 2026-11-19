@@ -297,7 +297,7 @@ function defaultMapping(
         hasExplicitAmountEvidence(rows, index) &&
         columnDataRatio(rows, index, (value) => {
           if (typeof value === "number") return Number.isFinite(value);
-          const text = String(value ?? "").trim();
+          const text = String(value).trim();
           return text === "" || /^[+-]?(?:R\$|BRL)?\s*[\d.,]+$/i.test(text);
         }) >= 0.7,
     );
@@ -331,6 +331,14 @@ function normalizedKeywords(description: string) {
 
 function inferEverydayCategory(description: string, kind: FinancialKind) {
   const text = normalizedKeywords(description);
+  if (
+    kind === "EXPENSE" &&
+    /\b(?:PAGAMENTO|PAGTO|DEBITO)\s+(?:DA\s+)?FATURA\s+(?:DO\s+)?CARTAO\b/.test(
+      text,
+    )
+  ) {
+    return "Fatura do cartão";
+  }
   if (
     kind === "INCOME" &&
     /\bCREDITO EVENTO B3\b/.test(text) &&

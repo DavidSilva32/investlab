@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import { CalendarClock, CircleHelp, Plus } from "lucide-react";
+import { CalendarClock, CircleHelp } from "lucide-react";
 import { toast } from "sonner";
 import { apiRequest } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { FinancialCategoryQuickCreateDialog } from "@/app/(private)/financas/_components/financial-category-quick-create-dialog";
+import { FinancialCategoryPicker } from "@/app/(private)/financas/_components/financial-category-picker";
 import {
   formatAmountInput,
   formatBrazilianAmountValue,
@@ -38,7 +38,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getFinancialCategoryIcon } from "@/app/(private)/financas/_components/financial-category-icons";
 
 type Kind = "INCOME" | "EXPENSE";
 type EntryMode = "actual" | "planned" | "both";
@@ -145,8 +144,6 @@ export function FinancialEntryDialog({
   );
   const [actualDate, setActualDate] = useState(entry?.actualDate ?? "");
   const [busy, setBusy] = useState(false);
-  const [quickCategoryOpen, setQuickCategoryOpen] = useState(false);
-  const [quickCategories, setQuickCategories] = useState<Category[]>([]);
   const [createRecurrence, setCreateRecurrence] = useState(false);
   const [entryMode, setEntryMode] = useState<EntryMode>(() =>
     getEntryMode(entry),
@@ -191,15 +188,6 @@ export function FinancialEntryDialog({
   const available = categories.filter(
     (category) => category.kind === kind && category.active,
   );
-  const availableCategories = [
-    ...available,
-    ...quickCategories.filter(
-      (category) =>
-        category.kind === kind &&
-        category.active &&
-        !available.some((existing) => existing.id === category.id),
-    ),
-  ];
   const duplicateRecurrence = recurrences.find(
     (recurrence) =>
       recurrence.active &&
@@ -366,49 +354,15 @@ export function FinancialEntryDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="financial-entry-category">Categoria</Label>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                className="h-auto px-1 py-0 text-xs"
-                disabled={Boolean(entry?.recurrenceId)}
-                onClick={() => setQuickCategoryOpen(true)}
-              >
-                <Plus aria-hidden="true" className="mr-1 size-3.5" />
-                Criar categoria
-              </Button>
-            </div>
-            <Select
+            <Label>Categoria</Label>
+            <FinancialCategoryPicker
+              label="Categoria"
+              categories={available}
               value={categoryId}
               onValueChange={setCategoryId}
               disabled={Boolean(entry?.recurrenceId)}
               required
-            >
-              <SelectTrigger
-                id="financial-entry-category"
-                aria-label="Categoria"
-              >
-                <SelectValue placeholder="Selecione uma categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableCategories.map((category) => {
-                  const Icon = getFinancialCategoryIcon(category.name);
-                  return (
-                    <SelectItem key={category.id} value={category.id}>
-                      <span className="inline-flex items-center gap-2">
-                        <Icon
-                          aria-hidden="true"
-                          className="size-4 text-muted-foreground"
-                        />
-                        {category.name}
-                      </span>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            />
           </div>
           {!recurringEntry && !createRecurrence && (
             <div className="space-y-2">
@@ -685,15 +639,6 @@ export function FinancialEntryDialog({
           </DialogFooter>
         </form>
       </DialogContent>
-      <FinancialCategoryQuickCreateDialog
-        open={quickCategoryOpen}
-        kind={kind}
-        onOpenChange={setQuickCategoryOpen}
-        onCreated={(category) => {
-          setQuickCategories((current) => [...current, category]);
-          setCategoryId(category.id);
-        }}
-      />
     </Dialog>
   );
 }

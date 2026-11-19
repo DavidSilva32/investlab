@@ -188,6 +188,53 @@ describe("FinancialMonthCloseRepository", () => {
     });
   });
 
+  it("returns the prior immutable versions when a month is closed again", async () => {
+    state.transactionSelectRows = [
+      [
+        {
+          id: "closure-id",
+          userId: state.userId,
+          month: "2026-10",
+          status: "CLOSED",
+          currentVersion: 2,
+          closedAt: new Date("2026-11-02T12:00:00Z"),
+          updatedAt: new Date("2026-11-02T12:00:00Z"),
+        },
+      ],
+      [
+        {
+          closedAt: new Date("2026-11-01T12:00:00Z"),
+          totals,
+        },
+      ],
+    ];
+
+    await expect(
+      repository.closeMonth("2026-10", async () => totals),
+    ).resolves.toMatchObject({
+      status: "closed",
+      history: [
+        {
+          closedAt: "2026-11-01T12:00:00.000Z",
+          totals,
+        },
+      ],
+    });
+  });
+
+  it("throws if the month-close row could not be created", async () => {
+    state.transactionSelectRows = [[]];
+    state.transaction.insert = vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn().mockResolvedValue([]),
+      })),
+    }));
+
+    await expect(
+      repository.closeMonth("2026-10", async () => totals),
+    ).rejects.toThrow("The financial month could not be closed.");
+  });
+
   it("returns null when no close or current version exists", async () => {
     state.databaseSelectRows = [[]];
     await expect(repository.getCurrent("2026-10")).resolves.toBeNull();
@@ -234,6 +281,28 @@ describe("FinancialMonthCloseRepository", () => {
     await expect(repository.listVersions("2026-10")).resolves.toEqual([
       versionRow,
     ]);
+  });
+
+  it("keeps a verified close in the closed state", async () => {
+    state.databaseSelectRows = [
+      [
+        {
+          id: "closure-id",
+          month: "2026-10",
+          status: "CLOSED",
+          currentVersion: 1,
+          closedAt: new Date("2026-11-01T12:00:00Z"),
+        },
+      ],
+      [{ totals }],
+      [],
+    ];
+
+    await expect(repository.getCurrent("2026-10")).resolves.toMatchObject({
+      status: "closed",
+      totals,
+      history: [],
+    });
   });
 
   it("returns an empty history if the month has never been closed", async () => {

@@ -22,6 +22,7 @@ import {
 import { getApiMessage } from "@/lib/api-message";
 import { apiRequest } from "@/lib/api-client";
 import { toast } from "sonner";
+import { FinancialCategoryPicker } from "@/app/(private)/financas/_components/financial-category-picker";
 import type { ParsedStatementRow } from "@/backend/services/financial-statement-import-parser";
 
 type Kind = "INCOME" | "EXPENSE";
@@ -128,7 +129,6 @@ export function FinancialStatementImportDialog({
   const [allowDuplicates, setAllowDuplicates] = useState(false);
   const [rememberCategories, setRememberCategories] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const includedRows = useMemo(
     () => reviewRows.filter((row) => row.included),
@@ -172,7 +172,6 @@ export function FinancialStatementImportDialog({
     setReviewRows([]);
     setAllowDuplicates(false);
     setRememberCategories(true);
-    setError(null);
     setLoading(false);
   };
 
@@ -211,27 +210,19 @@ export function FinancialStatementImportDialog({
     }
   };
 
-  const confirm = async () => {
-    if (
-      !open ||
-      !file ||
-      !preview ||
-      invalidIncluded ||
-      (duplicateCount > 0 && !allowDuplicates)
-    )
-      return;
-    const selectedFile = file;
-    const selectedPreview = preview;
+  const confirm = async (
+    selectedFile: File,
+    selectedPreview: PreviewResponse,
+  ) => {
     const generation = ++requestGeneration.current;
     setLoading(true);
-    setError(null);
     try {
       const result = await apiRequest<{ message?: string }>(
         "/api/financial-statement-import/confirm",
         {
           method: "POST",
           body: JSON.stringify({
-            fileHash: preview.hash,
+            fileHash: selectedPreview.hash,
             allowPossibleDuplicates: allowDuplicates,
             rememberCategories,
             rows: includedRows.map((row) => ({
@@ -306,10 +297,8 @@ export function FinancialStatementImportDialog({
 
   const normalizeDescription = (description: string) =>
     description.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ");
-  const updateRow = (sourceRow: number, patch: Partial<ReviewRow>) =>
+  const updateRow = (current: ReviewRow, patch: Partial<ReviewRow>) =>
     setReviewRows((rows) => {
-      const current = rows.find((row) => row.sourceRow === sourceRow);
-      if (!current) return rows;
       if (patch.categoryId !== undefined && current.kind) {
         const descriptionKey = normalizeDescription(current.description);
         return rows.map((row) =>
@@ -324,7 +313,7 @@ export function FinancialStatementImportDialog({
         );
       }
       return rows.map((row) =>
-        row.sourceRow === sourceRow
+        row.sourceRow === current.sourceRow
           ? {
               ...row,
               ...patch,
@@ -335,12 +324,10 @@ export function FinancialStatementImportDialog({
           : row,
       );
     });
-  const updateDate = (sourceRow: number, value: string) => {
+  const updateDate = (current: ReviewRow, value: string) => {
     const actualDate = applyDateMask(value);
-    const current = reviewRows.find((row) => row.sourceRow === sourceRow);
-    if (!current) return;
     const dateError = "Confira a data informada.";
-    updateRow(sourceRow, {
+    updateRow(current, {
       actualDate,
       errors: [
         ...current.errors.filter(
@@ -355,7 +342,7 @@ export function FinancialStatementImportDialog({
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) reset();
+        reset();
       }}
     >
       <DialogContent className="box-border max-h-[min(92dvh,56rem)] w-[calc(100vw-2rem)] min-w-0 max-w-6xl overflow-x-hidden overflow-y-auto">
@@ -385,14 +372,6 @@ export function FinancialStatementImportDialog({
           {loading && (
             <p role="status" className="text-sm text-muted-foreground">
               Lendo e conferindo o arquivo…
-            </p>
-          )}
-          {error && (
-            <p
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-            >
-              {error}
             </p>
           )}
           {reviewRows.length > 0 && (
@@ -441,7 +420,7 @@ export function FinancialStatementImportDialog({
                             <Checkbox
                               checked={row.included}
                               onCheckedChange={(checked) =>
-                                updateRow(row.sourceRow, {
+                                updateRow(row, {
                                   included: checked === true,
                                 })
                               }
@@ -453,7 +432,7 @@ export function FinancialStatementImportDialog({
                               value={row.description}
                               onChange={(event) => {
                                 const description = event.target.value;
-                                updateRow(row.sourceRow, {
+                                updateRow(row, {
                                   description,
                                   errors:
                                     description.trim() &&
@@ -475,7 +454,7 @@ export function FinancialStatementImportDialog({
                             <Select
                               value={row.kind ?? ""}
                               onValueChange={(value: Kind) =>
-                                updateRow(row.sourceRow, {
+                                updateRow(row, {
                                   kind: value,
                                   errors: row.errors.filter(
                                     (message) =>
@@ -501,7 +480,7 @@ export function FinancialStatementImportDialog({
                               value={formatDateForDisplay(row.actualDate)}
                               placeholder="dd/mm/aaaa"
                               onChange={(event) =>
-                                updateDate(row.sourceRow, event.target.value)
+                                updateDate(row, event.target.value)
                               }
                               aria-label={`Data da linha ${row.sourceRow}`}
                             />
@@ -522,7 +501,7 @@ export function FinancialStatementImportDialog({
                                   value <= 0
                                     ? null
                                     : Math.round(value * 100) / 100;
-                                updateRow(row.sourceRow, {
+                                updateRow(row, {
                                   amount,
                                   errors: amount
                                     ? row.errors.filter((message) =>
@@ -541,29 +520,16 @@ export function FinancialStatementImportDialog({
                             />
                           </td>
                           <td className="p-2">
-                            <Select
+                            <FinancialCategoryPicker
+                              label={`Categoria da linha ${row.sourceRow}`}
+                              categories={compatibleCategories}
                               value={row.categoryId}
                               onValueChange={(value) =>
-                                updateRow(row.sourceRow, { categoryId: value })
+                                updateRow(row, { categoryId: value })
                               }
                               disabled={!row.kind}
-                            >
-                              <SelectTrigger
-                                aria-label={`Categoria da linha ${row.sourceRow}`}
-                              >
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {compatibleCategories.map((category) => (
-                                  <SelectItem
-                                    key={category.id}
-                                    value={category.id}
-                                  >
-                                    {category.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              placeholder="Selecione"
+                            />
                           </td>
                           <td className="break-words p-2 text-xs">
                             {row.alreadyImported && (
@@ -612,7 +578,7 @@ export function FinancialStatementImportDialog({
                         <Checkbox
                           checked={row.included}
                           onCheckedChange={(checked) =>
-                            updateRow(row.sourceRow, {
+                            updateRow(row, {
                               included: checked === true,
                             })
                           }
@@ -639,7 +605,7 @@ export function FinancialStatementImportDialog({
                           value={row.description}
                           onChange={(event) => {
                             const description = event.target.value;
-                            updateRow(row.sourceRow, {
+                            updateRow(row, {
                               description,
                               errors:
                                 description.trim() && description.length <= 120
@@ -661,7 +627,7 @@ export function FinancialStatementImportDialog({
                           <Select
                             value={row.kind ?? ""}
                             onValueChange={(value: Kind) =>
-                              updateRow(row.sourceRow, {
+                              updateRow(row, {
                                 kind: value,
                                 errors: row.errors.filter(
                                   (message) =>
@@ -688,7 +654,7 @@ export function FinancialStatementImportDialog({
                             value={formatDateForDisplay(row.actualDate)}
                             placeholder="dd/mm/aaaa"
                             onChange={(event) =>
-                              updateDate(row.sourceRow, event.target.value)
+                              updateDate(row, event.target.value)
                             }
                             aria-label={`Data da linha ${row.sourceRow}`}
                           />
@@ -710,7 +676,7 @@ export function FinancialStatementImportDialog({
                                 value <= 0
                                   ? null
                                   : Math.round(value * 100) / 100;
-                              updateRow(row.sourceRow, {
+                              updateRow(row, {
                                 amount,
                                 errors: amount
                                   ? row.errors.filter(
@@ -731,29 +697,16 @@ export function FinancialStatementImportDialog({
                         </label>
                         <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
                           Categoria
-                          <Select
+                          <FinancialCategoryPicker
+                            label={`Categoria da linha ${row.sourceRow}`}
+                            categories={compatibleCategories}
                             value={row.categoryId}
                             onValueChange={(value) =>
-                              updateRow(row.sourceRow, { categoryId: value })
+                              updateRow(row, { categoryId: value })
                             }
                             disabled={!row.kind}
-                          >
-                            <SelectTrigger
-                              aria-label={`Categoria da linha ${row.sourceRow}`}
-                            >
-                              <SelectValue placeholder="Selecione" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {compatibleCategories.map((category) => (
-                                <SelectItem
-                                  key={category.id}
-                                  value={category.id}
-                                >
-                                  {category.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            placeholder="Selecione"
+                          />
                         </label>
                       </div>
                       {rowErrors.length > 0 && (
@@ -814,7 +767,7 @@ export function FinancialStatementImportDialog({
           {reviewRows.length > 0 && (
             <Button
               type="button"
-              onClick={() => void confirm()}
+              onClick={() => void confirm(file!, preview!)}
               disabled={
                 loading ||
                 includedRows.length === 0 ||

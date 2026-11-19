@@ -42,121 +42,6 @@ describe("FinancialRepository", () => {
     expect(new PgDialect().sqlToQuery(predicate).params).toContain("owner-a");
   });
 
-  it("creates a user-owned category", async () => {
-    const row = { id: "category" };
-    const returning = vi.fn().mockResolvedValue([row]);
-    const values = vi.fn().mockReturnValue({ returning });
-    database.insert.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_categories");
-      return { values };
-    });
-
-    await expect(
-      runWithDataOwner("owner-b", () =>
-        repository.createCategory({ kind: "EXPENSE", name: "Pets" }),
-      ),
-    ).resolves.toEqual(row);
-    expect(values).toHaveBeenCalledWith({
-      kind: "EXPENSE",
-      name: "Pets",
-      userId: "owner-b",
-      isDefault: false,
-    });
-  });
-
-  it("updates, deactivates, and upserts categories with owner predicates", async () => {
-    const row = { id: "category" };
-    const returning = vi.fn().mockResolvedValue([row]);
-    const where = vi.fn().mockReturnValue({ returning });
-    const set = vi.fn().mockReturnValue({ where });
-    database.update.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_categories");
-      return { set };
-    });
-
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.updateOwnedCategory("category-id", {
-          kind: "EXPENSE",
-          name: "Casa",
-        }),
-      ),
-    ).resolves.toEqual(row);
-    expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toContain(
-      "owner-c",
-    );
-
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.setOwnedCategoryActive("category-id", true),
-      ),
-    ).resolves.toEqual(row);
-    returning.mockResolvedValueOnce([]);
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.setOwnedCategoryActive("missing", false),
-      ),
-    ).resolves.toBeNull();
-
-    returning.mockResolvedValueOnce([]);
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.updateOwnedCategory("missing", {
-          kind: "EXPENSE",
-          name: "Casa",
-        }),
-      ),
-    ).resolves.toBeNull();
-
-    const preferenceRows = [
-      {
-        id: "default-category",
-        userId: null,
-        kind: "INCOME",
-        name: "Renda principal",
-        originalName: "Salário",
-        isDefault: true,
-        active: true,
-      },
-    ];
-    const orderBy = vi.fn().mockResolvedValue(preferenceRows);
-    const categoryWhere = vi.fn().mockReturnValue({ orderBy });
-    const leftJoin = vi.fn().mockReturnValue({ where: categoryWhere });
-    const from = vi.fn().mockReturnValue({ leftJoin });
-    database.select.mockReturnValue({ from });
-    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    database.insert.mockImplementation((table) => {
-      expect(getTableName(table)).toBe("financial_category_preferences");
-      return { values };
-    });
-
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.saveDefaultCategoryPreference("default-category", {
-          nameOverride: "Renda principal",
-          active: true,
-        }),
-      ),
-    ).resolves.toEqual(preferenceRows[0]);
-    expect(values).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "owner-c",
-        categoryId: "default-category",
-        nameOverride: "Renda principal",
-      }),
-    );
-    orderBy.mockResolvedValueOnce([]);
-    await expect(
-      runWithDataOwner("owner-c", () =>
-        repository.saveDefaultCategoryPreference("missing-category", {
-          nameOverride: null,
-          active: false,
-        }),
-      ),
-    ).resolves.toBeNull();
-  });
-
   it("lists entries within expected or actual dates for the active owner", async () => {
     const rows = [{ id: "entry" }];
     const orderBy = vi.fn().mockResolvedValue(rows);
@@ -229,8 +114,9 @@ describe("FinancialRepository", () => {
     const selected = vi
       .fn()
       .mockResolvedValue([{ expectedDate: "2026-10-10", actualDate: null }]);
+    const updatedEntry = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue([row]),
+      returning: updatedEntry,
       then: (resolve: (value: undefined) => unknown) =>
         Promise.resolve(undefined).then(resolve),
     });
@@ -287,6 +173,15 @@ describe("FinancialRepository", () => {
     await expect(
       runWithDataOwner("owner-f", () =>
         repository.updateEntry("missing", input),
+      ),
+    ).resolves.toBeNull();
+    selected.mockResolvedValueOnce([
+      { expectedDate: "2026-10-10", actualDate: null },
+    ]);
+    updatedEntry.mockResolvedValueOnce([]);
+    await expect(
+      runWithDataOwner("owner-f", () =>
+        repository.updateEntry("entry-id", input),
       ),
     ).resolves.toBeNull();
   });
@@ -423,6 +318,52 @@ describe("FinancialRepository", () => {
     expect(database.transaction).toHaveBeenCalledTimes(5);
   });
 
+  it("rejects recurrence saves when the linked entry is not owned", async () => {
+    const limit = vi.fn().mockResolvedValue([]);
+    const transaction = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({ limit })),
+          })),
+        })),
+      })),
+      insert: vi.fn(),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.saveEntryWithRecurrence(
+          "missing-entry",
+          {
+            kind: "EXPENSE",
+            description: "Aluguel",
+            categoryId: "category-id",
+            recurrenceId: null,
+            expectedAmount: "550.00",
+            expectedDate: "2026-10-10",
+            actualAmount: null,
+            actualDate: null,
+          },
+          {
+            amount: "550.00",
+            categoryId: "category-id",
+            description: "Aluguel",
+            essential: true,
+            firstDueDate: "2026-11-10",
+            frequency: "MONTHLY",
+            kind: "EXPENSE",
+          },
+        ),
+      ),
+    ).rejects.toThrow("The linked financial entry could not be found.");
+    expect(limit).toHaveBeenCalledOnce();
+    expect(transaction.insert).not.toHaveBeenCalled();
+  });
+
   it("deletes only an entry belonging to the active owner", async () => {
     const returning = vi.fn().mockResolvedValue([{ id: "entry-id" }]);
     const where = vi.fn().mockReturnValue({ returning });
@@ -460,6 +401,13 @@ describe("FinancialRepository", () => {
     selected.mockResolvedValueOnce([]);
     await expect(
       runWithDataOwner("owner-g", () => repository.deleteEntry("missing")),
+    ).resolves.toBeNull();
+    selected.mockResolvedValueOnce([
+      { expectedDate: "2026-10-10", actualDate: null },
+    ]);
+    returning.mockResolvedValueOnce([]);
+    await expect(
+      runWithDataOwner("owner-g", () => repository.deleteEntry("entry-id")),
     ).resolves.toBeNull();
   });
 });

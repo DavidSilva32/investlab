@@ -83,19 +83,6 @@ export const financialEntryUpdateSchema = financialEntryFields
   .extend({ id: z.string().uuid() })
   .superRefine(validateAmountDatePairs);
 
-export const financialCategoryCreateSchema = z.object({
-  kind: z.enum(financialKinds),
-  name: z.string().trim().min(1).max(80),
-});
-
-export const financialCategoryUpdateSchema = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string().trim().min(1).max(80).optional(),
-    active: z.boolean().optional(),
-  })
-  .refine((value) => value.name !== undefined || value.active !== undefined);
-
 export type FinancialEntryInput = z.infer<typeof financialEntryCreateSchema>;
 export type FinancialEntryUpdateInput = z.infer<
   typeof financialEntryUpdateSchema

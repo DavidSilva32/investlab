@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const parser = vi.hoisted(() => vi.fn());
 const repository = vi.hoisted(() => ({
@@ -10,6 +10,7 @@ const repository = vi.hoisted(() => ({
   listTradingItems: vi.fn(),
   listMovements: vi.fn(),
   listB3ReconciliationEvents: vi.fn(),
+  listB3Proventos: vi.fn(),
   saveB3ReconciliationDecisions: vi.fn(),
   create: vi.fn(),
   deleteByDocumentType: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
     conflict: false,
   });
 });
+afterEach(() => repository.existsByHash.mockReset());
 
 describe("ImportService", () => {
   const file = {
@@ -369,6 +371,132 @@ describe("ImportService", () => {
     expect(importService.preview(file).hash).not.toBe(
       importService.preview(otherFile).hash,
     );
+  });
+});
+
+describe("proventos summary", () => {
+  it("summarizes the most recent import for each payment status", async () => {
+    const items = [
+      {
+        status: "RECEIVED",
+        importId: "received-old",
+        fileName: "old.xlsx",
+        importedAt: "2026-10-01",
+        netValue: "1.25",
+      },
+      {
+        status: "RECEIVED",
+        importId: "received-new",
+        fileName: "received.xlsx",
+        importedAt: "2026-11-01",
+        netValue: "2.34",
+      },
+      {
+        status: "RECEIVED",
+        importId: "received-new",
+        fileName: "received.xlsx",
+        importedAt: "2026-11-01",
+        netValue: "1.66",
+      },
+      {
+        status: "UPCOMING",
+        importId: "upcoming",
+        fileName: "upcoming.xlsx",
+        importedAt: "2026-11-02",
+        netValue: "5",
+      },
+    ];
+    repository.listB3Proventos.mockResolvedValue(items);
+
+    await expect(
+      importService.listProventos("request-proventos"),
+    ).resolves.toEqual({
+      items,
+      latestImports: {
+        received: {
+          fileName: "received.xlsx",
+          importedAt: "2026-11-01",
+          count: 2,
+          total: 4,
+        },
+        upcoming: {
+          fileName: "upcoming.xlsx",
+          importedAt: "2026-11-02",
+          count: 1,
+          total: 5,
+        },
+      },
+    });
+    expect(repository.listB3Proventos).toHaveBeenCalledWith(
+      "request-proventos",
+    );
+  });
+
+  it("returns null summaries when there are no imported payments", async () => {
+    repository.listB3Proventos.mockResolvedValue([]);
+
+    await expect(importService.listProventos("request-empty")).resolves.toEqual(
+      {
+        items: [],
+        latestImports: { received: null, upcoming: null },
+      },
+    );
+  });
+});
+
+describe("proventos imports", () => {
+  const file = {
+    name: "proventos.xlsx",
+    size: 3,
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from("proventos"),
+  };
+  const proventoPreview = {
+    documentType: "B3_PROVENTO_XLSX" as const,
+    proventos: [{ product: "HGLG11", netValue: "2.34" }],
+  };
+
+  it("marks a previously imported proventos file in its preview", async () => {
+    parser.mockReturnValue(proventoPreview);
+    repository.existsByHash.mockResolvedValue(true);
+
+    await expect(
+      importService.previewWithReconciliation(file, "request"),
+    ).resolves.toMatchObject({
+      documentType: "B3_PROVENTO_XLSX",
+      duplicateImport: true,
+    });
+    expect(repository.existsByHash).toHaveBeenCalledWith(
+      createHash("sha256").update(file.buffer).digest("hex"),
+      "request",
+    );
+  });
+
+  it("turns a concurrent duplicate proventos insert into a conflict", async () => {
+    parser.mockReturnValue(proventoPreview);
+    repository.existsByHash
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    repository.create.mockRejectedValue(new Error("unique constraint"));
+
+    await expect(importService.confirm(file, "request")).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Este arquivo de proventos já foi importado. Atualize a lista antes de tentar novamente.",
+    });
+    expect(repository.create).toHaveBeenCalledOnce();
+    expect(repository.existsByHash).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves an unexpected proventos persistence error when it is not a duplicate", async () => {
+    parser.mockReturnValue(proventoPreview);
+    repository.existsByHash.mockResolvedValue(false);
+    repository.create.mockRejectedValue(new Error("database unavailable"));
+
+    await expect(importService.confirm(file, "request")).rejects.toThrow(
+      "database unavailable",
+    );
+    expect(repository.existsByHash).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1010,6 +1138,17 @@ describe("individual import deletion", () => {
     expect((thrown as Error).message).toBe(
       "Exclusão individual não está disponível para arquivos de negociações.",
     );
+    expect(repository.deleteUnreconciledMovement).not.toHaveBeenCalled();
+    expect(repository.deleteLatestPosition).not.toHaveBeenCalled();
+  });
+
+  it("rejects individual deletion for B3 proventos imports", async () => {
+    await expect(
+      importService.delete("B3_PROVENTO_XLSX", "request-proventos", validId),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Exclusão individual de proventos ainda não está disponível.",
+    });
     expect(repository.deleteUnreconciledMovement).not.toHaveBeenCalled();
     expect(repository.deleteLatestPosition).not.toHaveBeenCalled();
   });

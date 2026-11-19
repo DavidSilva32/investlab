@@ -11,7 +11,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StrategyAllocationWorkspace } from "@/app/(private)/strategy/_components/strategy-allocation-workspace";
 
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
+const searchParams = vi.hoisted(() => vi.fn(() => new URLSearchParams()));
 vi.mock("sonner", () => ({ toast }));
+vi.mock("next/navigation", () => ({ useSearchParams: searchParams }));
 vi.mock(
   "@/app/(private)/strategy/_components/next-contribution-stock-opportunities",
   () => ({
@@ -196,6 +198,28 @@ describe("StrategyAllocationWorkspace", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
     expect(screen.getAllByText(/Corrija a informação/)).toHaveLength(2);
+  });
+
+  it("prefills a valid contribution from the page query and explains it is only a simulation", () => {
+    searchParams.mockReturnValue(new URLSearchParams("aporteCents=12345"));
+
+    render(<StrategyAllocationWorkspace {...baseProps} />);
+
+    expect(input("Valor disponível").value).toBe("R$ 123,45");
+    expect(
+      screen.getByText(/Valor recebido informado para simulação/),
+    ).toBeTruthy();
+  });
+
+  it("ignores a malformed contribution query value", () => {
+    searchParams.mockReturnValue(new URLSearchParams("aporteCents=1.25"));
+
+    render(<StrategyAllocationWorkspace {...baseProps} />);
+
+    expect(input("Valor disponível").value).toBe("");
+    expect(
+      screen.getByText(/Valor recebido informado para simulação/),
+    ).toBeTruthy();
   });
 
   it("shows effective valuation context only when it differs from the query date", () => {

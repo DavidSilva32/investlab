@@ -505,6 +505,13 @@
       "when": 1795113399843,
       "tag": "0071_add_financial_proventos_category",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795116090870,
+      "tag": "0072_add_financial_card_bill_category",
+      "breakpoints": true
     }
   ]
 }

@@ -155,8 +155,7 @@ export function FinancialCapacitySimulator({ month }: Props) {
     setSimulation(null);
   }
 
-  async function simulate() {
-    if (incomeCents === null || expenseCents === null) return;
+  async function simulate(incomeCents: string, expenseCents: string) {
     const requestGeneration = ++requestGenerationRef.current;
     setLoading(true);
     try {
@@ -297,7 +296,7 @@ export function FinancialCapacitySimulator({ month }: Props) {
                   </div>
                 </div>
                 <Button
-                  onClick={() => void simulate()}
+                  onClick={() => void simulate(incomeCents!, expenseCents!)}
                   disabled={
                     baselineLoading ||
                     loading ||

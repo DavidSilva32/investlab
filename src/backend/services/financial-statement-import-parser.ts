@@ -47,7 +47,6 @@ function parseCsv(
   let row: string[] = [];
   let field = "";
   let quoted = false;
-  let stopped = false;
   const appendField = () => {
     row.push(field);
     field = "";
@@ -62,10 +61,6 @@ function parseCsv(
     appendField();
     if (row.some((value) => value.trim() !== "")) {
       if (rows.length >= options.maxRows) {
-        if (options.stopAfterMaxRows) {
-          stopped = true;
-          return;
-        }
         throw new ApplicationError(
           "O arquivo pode ter no máximo 500 lançamentos.",
           400,
@@ -87,18 +82,10 @@ function parseCsv(
     } else if ((character === "\n" || character === "\r") && !quoted) {
       if (character === "\r" && text[index + 1] === "\n") index += 1;
       appendRecord();
-      if (
-        stopped ||
-        (options.stopAfterMaxRows && rows.length >= options.maxRows)
-      )
-        break;
+      if (options.stopAfterMaxRows && rows.length >= options.maxRows) break;
     } else field += character;
   }
-  if (
-    !stopped &&
-    options.includeFinalRecord !== false &&
-    (field || row.length)
-  ) {
+  if (options.includeFinalRecord !== false && (field || row.length)) {
     appendRecord();
   }
   if (quoted && !options.allowIncompleteTail)

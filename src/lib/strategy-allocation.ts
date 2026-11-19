@@ -147,7 +147,7 @@ export function calculateLongTermStrategyWealth(
   const fixedIncome = allocation.classes.find(
     ({ id }) => id === "fixed_income",
   );
-  const fixedIncomeCents = BigInt(fixedIncome?.knownValueCents ?? "0");
+  const fixedIncomeCents = BigInt(fixedIncome!.knownValueCents);
   const strategyTotalCents =
     BigInt(allocation.knownValueCents) - excludedBalanceCents;
   const limitation =

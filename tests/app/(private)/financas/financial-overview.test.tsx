@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -104,6 +110,58 @@ describe("FinancialOverview", () => {
     ).toBe(false);
   });
 
+  it("refreshes finance data after a recurrence is removed", async () => {
+    const user = userEvent.setup();
+    let overviewReads = 0;
+    api.request.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/finance-overview")) {
+        overviewReads += 1;
+        return Promise.resolve(overview);
+      }
+      if (
+        url === "/api/financial-recurrences?id=recurrence-delete" &&
+        options?.method === "DELETE"
+      ) {
+        return Promise.resolve({ action: "ended" });
+      }
+      if (url.startsWith("/api/financial-recurrences")) {
+        return Promise.resolve({
+          recurrences: [
+            {
+              id: "recurrence-delete",
+              kind: "EXPENSE",
+              description: "Internet",
+              categoryId,
+              amount: "120.00",
+              frequency: "MONTHLY",
+              firstDueDate: "2026-10-11",
+              essential: false,
+              active: true,
+            },
+          ],
+          recurrenceOccurrences: [],
+        });
+      }
+      return Promise.resolve({});
+    });
+    renderFinance();
+    await screen.findByText(/Ainda não há registros neste mês/);
+    await user.click(screen.getByRole("button", { name: "Recorrências" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Excluir Internet" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Excluir recorrência" }),
+    );
+
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-recurrences?id=recurrence-delete",
+      expect.objectContaining({ method: "DELETE" }),
+      "Não foi possível remover a recorrência.",
+    );
+  });
+
   it("keeps a positive monthly forecast focused on finance without loading strategy data", async () => {
     const positiveForecast = {
       ...overview,
@@ -177,7 +235,22 @@ describe("FinancialOverview", () => {
         return Promise.resolve(overview);
       }
       if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+        return Promise.resolve({
+          recurrences: [
+            {
+              id: "recurrence-1",
+              kind: "EXPENSE",
+              description: "Internet",
+              categoryId,
+              amount: "120.00",
+              frequency: "MONTHLY",
+              firstDueDate: "2026-10-11",
+              essential: false,
+              active: true,
+            },
+          ],
+          recurrenceOccurrences: [],
+        });
       if (url === "/api/financial-entries" && options?.method === "POST")
         return Promise.resolve({});
       return Promise.resolve({});
@@ -309,6 +382,106 @@ describe("FinancialOverview", () => {
     );
   });
 
+  it("imports a reviewed statement and refreshes the monthly finance data", async () => {
+    const user = userEvent.setup();
+    let overviewReads = 0;
+    api.request.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance-overview")) {
+        overviewReads += 1;
+        return Promise.resolve(overview);
+      }
+      if (url.startsWith("/api/financial-recurrences"))
+        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      return Promise.resolve({ importedCount: 1 });
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            hash: "f".repeat(64),
+            headers: ["Data", "Descrição", "Valor"],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "EXPENSE",
+                description: "Mercado",
+                actualDate: "2026-11-14",
+                amount: 10,
+                errors: [],
+                categoryId,
+                categorySource: "suggested",
+                possibleDuplicate: false,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    renderFinance();
+    await screen.findByText(/Ainda não há registros neste mês/);
+
+    await user.click(screen.getByRole("button", { name: "Importar extrato" }));
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findAllByLabelText("Descrição da linha 2");
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    );
+
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-statement-import/confirm",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Importar extrato" }),
+    ).toBeNull();
+  });
+
+  it("refreshes finance data after closing a past month", async () => {
+    const user = userEvent.setup();
+    let overviewReads = 0;
+    api.request.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance-overview")) {
+        overviewReads += 1;
+        return Promise.resolve(overview);
+      }
+      if (url.startsWith("/api/financial-recurrences"))
+        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      return Promise.resolve({});
+    });
+    renderFinance();
+    await screen.findByText(/Ainda não há registros neste mês/);
+    await user.click(screen.getByRole("button", { name: "Mês anterior" }));
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
+    await user.click(screen.getByRole("button", { name: "Fechar mês" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirmar fechamento" }),
+    );
+
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(3));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/finance-close",
+      expect.objectContaining({ method: "POST" }),
+      "Não foi possível fechar o mês.",
+    );
+  });
+
   it("retries recurring data and creates a model from a launch", async () => {
     const user = userEvent.setup();
     state.searchParams = "gerenciar=recorrencias";
@@ -399,11 +572,7 @@ describe("FinancialOverview", () => {
     ).toBeTruthy();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Categorias" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Categorias" })).toBeNull();
     expect(
       screen
         .getByRole("button", { name: "Recorrências" })
@@ -479,7 +648,22 @@ describe("FinancialOverview", () => {
       if (url === "/api/financial-entries" && options?.method === "PATCH")
         return Promise.resolve({});
       if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+        return Promise.resolve({
+          recurrences: [
+            {
+              id: "recurrence-1",
+              kind: "EXPENSE",
+              description: "Internet",
+              categoryId,
+              amount: "120.00",
+              frequency: "MONTHLY",
+              firstDueDate: "2026-10-11",
+              essential: false,
+              active: true,
+            },
+          ],
+          recurrenceOccurrences: [],
+        });
       return Promise.resolve({ categories: overview.categories });
     });
     renderFinance();
@@ -498,11 +682,7 @@ describe("FinancialOverview", () => {
       ),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Categorias" }));
-    expect(
-      await screen.findByRole("dialog", { name: "Gerenciar categorias" }),
-    ).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByRole("button", { name: "Categorias" })).toBeNull();
 
     await user.click(
       screen.getByRole("button", { name: "Ações para Conta de luz" }),
@@ -540,6 +720,16 @@ describe("FinancialOverview", () => {
         "Não foi possível salvar o lançamento.",
       ),
     );
+
+    await user.click(
+      screen.getByRole("button", { name: /Ações para Internet/ }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Editar recorrência" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Gerenciar recorrências" }),
+    ).toBeTruthy();
   }, 10_000);
 
   it("marks negative balances and refreshes the overview after deleting an entry", async () => {

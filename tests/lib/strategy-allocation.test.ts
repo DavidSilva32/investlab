@@ -114,6 +114,24 @@ describe("simulateStrategyContribution", () => {
 });
 
 describe("strategy asset class metadata", () => {
+  it("keeps the fixed-income class available for an empty portfolio", () => {
+    const strategy = calculateLongTermStrategyWealth(
+      summarizeStrategyAllocation([]),
+      [],
+    );
+
+    expect(strategy).toMatchObject({
+      complete: true,
+      knownValueCents: "0",
+      classes: [
+        { id: "fixed_income", knownValueCents: "0" },
+        { id: "brazilian_equities", knownValueCents: "0" },
+        { id: "international_etfs", knownValueCents: "0" },
+        { id: "fiis", knownValueCents: "0" },
+      ],
+    });
+  });
+
   it("subtracts reserve and personal goal balances only from long-term fixed income", () => {
     const portfolio = summarizeStrategyAllocation([
       {

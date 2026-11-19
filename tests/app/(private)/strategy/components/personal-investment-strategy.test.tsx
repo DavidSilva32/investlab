@@ -185,6 +185,71 @@ describe("PersonalInvestmentStrategy", () => {
     ).toBeTruthy();
   });
 
+  it("explains why strategy percentages are unavailable for incomplete objective balances", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          strategyWealth: {
+            ...baseData.strategyWealth,
+            complete: false,
+            limitation: "missing_objective_balance",
+            excludedObjectives: [
+              {
+                id: "travel-id",
+                name: "Viagem",
+                amountCents: null,
+                observedOn: null,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(
+      await screen.findByText(
+        "Não foi possível calcular a composição de longo prazo",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Viagem: saldo não informado")).toBeTruthy();
+    expect(
+      screen.getByText(/Informe o saldo mais recente de cada objetivo/),
+    ).toBeTruthy();
+  });
+
+  it("warns when observed objectives exceed known fixed income", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...baseData,
+          strategyWealth: {
+            ...baseData.strategyWealth,
+            complete: false,
+            limitation: "objective_balances_exceed_fixed_income",
+            excludedObjectives: [
+              {
+                id: "travel-id",
+                name: "Viagem",
+                amountCents: "15000",
+                observedOn: null,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    render(<PersonalInvestmentStrategy />);
+
+    expect(await screen.findByText("Viagem: R$ 150,00")).toBeTruthy();
+    expect(
+      screen.getByText(/superam a renda fixa reconhecida na carteira/),
+    ).toBeTruthy();
+  });
+
   it("retries after a blocking load error", async () => {
     vi.stubGlobal(
       "fetch",

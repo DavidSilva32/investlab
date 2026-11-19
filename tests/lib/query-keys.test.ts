@@ -60,6 +60,7 @@ describe("queryKeys", () => {
       "portfolio",
       "emergency-reserve",
     ]);
+    expect(queryKeys.portfolio.proventos()).toEqual(["portfolio", "proventos"]);
     expect(queryKeys.portfolio.strategy()).toEqual(["portfolio", "strategy"]);
   });
 
@@ -74,6 +75,12 @@ describe("queryKeys", () => {
       "analyses",
       "stock",
       "PETR4",
+    ]);
+    expect(queryKeys.analyses.stockHistory("PETR4")).toEqual([
+      "analyses",
+      "stock",
+      "PETR4",
+      "history",
     ]);
     expect(queryKeys.analyses.comparison(["PETR4", "VALE3"])).toEqual([
       "analyses",

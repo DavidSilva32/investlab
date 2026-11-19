@@ -365,6 +365,38 @@ describe("FinancialRecurrencesRepository", () => {
     ).toContain(currentMonthKey());
   });
 
+  it("returns null when the recurrence is missing before an update", async () => {
+    const limit = vi.fn().mockResolvedValue([]);
+    const transaction = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            for: vi.fn(() => ({ limit })),
+          })),
+        })),
+      })),
+    };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+
+    await expect(
+      runWithDataOwner("owner-e", () =>
+        repository.updateRecurrence("missing-id", {
+          description: "Internet",
+          amount: "100.00",
+          frequency: "MONTHLY",
+          firstDueDate: "2026-10-10",
+          essential: true,
+          kind: "EXPENSE",
+          categoryId: null,
+          active: true,
+        }),
+      ),
+    ).resolves.toBeNull();
+    expect(limit).toHaveBeenCalledOnce();
+  });
+
   it("updates an owner expense and returns null when no row matches", async () => {
     const rows = [{ id: "updated" }];
     const returning = vi

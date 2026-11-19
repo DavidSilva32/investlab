@@ -53,6 +53,9 @@ describe("compareImportConfirmationOrder", () => {
     const trade = {
       preview: { documentType: "B3_TRADING_XLSX" as const },
     };
+    const provento = {
+      preview: { documentType: "B3_PROVENTO_XLSX" as const },
+    };
 
     expect(
       compareImportConfirmationOrder(
@@ -62,6 +65,10 @@ describe("compareImportConfirmationOrder", () => {
     ).toBe(0);
     expect(
       compareImportConfirmationOrder(trade, positionWithoutDate),
+    ).toBeLessThan(0);
+    expect(compareImportConfirmationOrder(trade, provento)).toBeLessThan(0);
+    expect(
+      compareImportConfirmationOrder(provento, positionWithoutDate),
     ).toBeLessThan(0);
   });
 });
@@ -161,6 +168,56 @@ const tradingPreview = {
     unmatched: [],
   },
   batchReconciliationPending: true,
+};
+const receivedProventosPreview = {
+  documentType: "B3_PROVENTO_XLSX",
+  count: 1,
+  duplicateImport: false,
+  proventos: [
+    {
+      status: "RECEIVED",
+      sourceSheet: "Recebidos",
+      sourceRow: 2,
+      product: "HGLG11 - PATRIA LOG FII RESP LTDA",
+      eventType: "Rendimento",
+      paymentDate: "2026-11-16",
+      institution: "Inter",
+      quantity: "2",
+      unitPrice: "1.17",
+      netValue: "2.34",
+    },
+  ],
+};
+const upcomingProventosPreview = {
+  documentType: "B3_PROVENTO_XLSX",
+  count: 2,
+  duplicateImport: true,
+  proventos: [
+    {
+      ...receivedProventosPreview.proventos[0],
+      status: "UPCOMING",
+      sourceSheet: "A receber",
+      sourceRow: 3,
+      product: "XPLG11",
+      paymentDate: "2026-12-01",
+      institution: null,
+      quantity: "1",
+      unitPrice: "0.92",
+      netValue: "0.92",
+    },
+    {
+      ...receivedProventosPreview.proventos[0],
+      status: "UPCOMING",
+      sourceSheet: "A receber",
+      sourceRow: 4,
+      product: "MXRF11",
+      paymentDate: "2026-12-02",
+      institution: "Inter",
+      quantity: "3",
+      unitPrice: "0.10",
+      netValue: "0.30",
+    },
+  ],
 };
 const reconciliationPair = {
   tradeId: "private-trade-id",
@@ -326,6 +383,133 @@ describe("PortfolioImport", () => {
       },
     );
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("reviews and imports received B3 proventos without changing positions", async () => {
+    const updated = vi.fn();
+    window.addEventListener("proventos:updated", updated);
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => receivedProventosPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => receivedProventosPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Proventos importados." }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Proventos importados." }),
+      });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: {
+        files: [
+          spreadsheet("proventos-recebidos-1.xlsx"),
+          spreadsheet("proventos-recebidos-2.xlsx"),
+        ],
+      },
+    });
+
+    const tables = await screen.findAllByRole("table", {
+      name: "Prévia de proventos",
+    });
+    const table = tables[0]!;
+    expect(screen.getAllByText("Proventos separados da carteira")).toHaveLength(
+      2,
+    );
+    expect(
+      screen.getAllByText(/registrados como recebidos pela B3/),
+    ).toHaveLength(2);
+    expect(screen.getAllByText(/Recebidos/).length).toBeGreaterThan(0);
+    expect(within(table).getByText("16/11/2026")).toBeTruthy();
+    expect(within(table).getByText("Total recebido no arquivo")).toBeTruthy();
+    expect(within(table).getAllByText(/2,34/)).toHaveLength(2);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 2 arquivo/ }),
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(
+      await screen.findByText(/2 arquivos de proventos processados/),
+    ).toBeTruthy();
+    expect(updated).toHaveBeenCalledOnce();
+    expect(toast.success).toHaveBeenCalledWith("Atualização concluída.");
+    window.removeEventListener("proventos:updated", updated);
+  });
+
+  it("uses singular success wording when importing one provento file", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => receivedProventosPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => receivedProventosPreview,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: "Proventos importados." }),
+      });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("proventos-recebidos.xlsx")] },
+    });
+
+    await screen.findByRole("table", { name: "Prévia de proventos" });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    expect(
+      await screen.findByText(/1 arquivo de proventos processado/),
+    ).toBeTruthy();
+  });
+
+  it("shows upcoming proventos, duplicate file status, and plural totals", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => upcomingProventosPreview,
+    });
+    vi.stubGlobal("fetch", fetch);
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [spreadsheet("proventos-a-receber.xlsx")] },
+    });
+
+    const table = await screen.findByRole("table", {
+      name: "Prévia de proventos",
+    });
+    expect(screen.getByText("2 registros · A receber")).toBeTruthy();
+    expect(screen.getByText(/previsões da B3 e podem mudar/)).toBeTruthy();
+    expect(screen.getByText("Este arquivo já foi importado")).toBeTruthy();
+    expect(within(table).getByText("Previsão")).toBeTruthy();
+    expect(within(table).getByText("01/12/2026")).toBeTruthy();
+    expect(within(table).getByText("02/12/2026")).toBeTruthy();
+    expect(within(table).getByText("Total previsto no arquivo")).toBeTruthy();
+    expect(within(table).getByText(/1,22/)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Confirmar 0 arquivo(s)",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: /Confirmar 1 arquivo/ }),
+    ).toBeNull();
   });
   it("shows the persisted date and enrichment explanation for an identical position file", async () => {
     vi.stubGlobal(
@@ -627,6 +811,49 @@ describe("PortfolioImport", () => {
     );
     expect(summary.textContent).toContain("não confirma venda ou resgate");
     expect(summary.textContent).toContain("nenhuma posição foi removida");
+  });
+
+  it("explains when an imported position is the first available snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => positionPreview })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            positionChangeSummary: {
+              comparisonAvailable: false,
+              currentReferenceDate: "2026-09-17",
+              previousReferenceDate: null,
+              currentPositionCount: 1,
+              previousPositionCount: null,
+              updatedCount: 0,
+              unchangedCount: 0,
+              unmatchedInCurrentCount: 0,
+              absentFromCurrentFileCount: 0,
+              notComparableCount: 0,
+            },
+          }),
+        }),
+    );
+    const { container } = render(<PortfolioImport />);
+
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [spreadsheet("primeiro-snapshot.xlsx")] },
+    });
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: /^Data exibida na B3/ }),
+      { target: { value: "18/09/2026" } },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Confirmar 1 arquivo/ }),
+    );
+
+    expect(
+      await screen.findByText(/Primeiro snapshot disponível para comparação/),
+    ).toBeTruthy();
+    expect(screen.getByText(/1 posições no arquivo/)).toBeTruthy();
   });
 
   it("summarizes plural movement and trade files after a successful batch", async () => {
