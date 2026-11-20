@@ -151,7 +151,7 @@ export function FinancialHistory({
                 </span>
               </p>
               <p className="mt-3 border-t pt-2 text-sm">
-                Saldo registrado{" "}
+                Resultado líquido{" "}
                 <span
                   className={`float-right font-semibold ${Number(item.recordedBalance) < 0 ? "text-status-danger" : "text-foreground"}`}
                 >

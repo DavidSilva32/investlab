@@ -35,7 +35,6 @@ const overview = {
     completeness: "no_data" as const,
   },
   entries: [],
-  recurringOccurrences: [],
   history: {
     months: Array.from({ length: 12 }, (_, index) => ({
       month: `2026-${String(index + 1).padStart(2, "0")}`,
@@ -330,7 +329,6 @@ describe("FinancialOverview", () => {
     const incomplete = {
       ...overview,
       entries: undefined,
-      recurringOccurrences: undefined,
       history: {
         ...overview.history,
         months: undefined,
@@ -586,7 +584,47 @@ describe("FinancialOverview", () => {
     expect(screen.queryByRole("button", { name: "Novo" })).toBeNull();
   });
 
-  it("shows recorded totals, undated occurrence guidance, categories, and edits a saved entry", async () => {
+  it("opens and closes recurrence editing from the recurrence manager", async () => {
+    const user = userEvent.setup();
+    api.request.mockImplementation((url: string) =>
+      url.startsWith("/api/finance-overview")
+        ? Promise.resolve(overview)
+        : Promise.resolve({
+            recurrences: [
+              {
+                id: "recurrence-1",
+                kind: "EXPENSE",
+                description: "Aluguel",
+                categoryId,
+                amount: "550.00",
+                frequency: "MONTHLY",
+                firstDueDate: "2026-10-10",
+                essential: true,
+                active: true,
+              },
+            ],
+            recurrenceOccurrences: [],
+          }),
+    );
+    renderFinance();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Recorrências" }),
+    );
+    await screen.findByRole("dialog", { name: "Gerenciar recorrências" });
+    await user.click(screen.getByRole("button", { name: "Editar Aluguel" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Editar recorrência" }),
+    ).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Editar recorrência" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("shows realized totals and edits a saved entry", async () => {
     const user = userEvent.setup();
     const populated = {
       ...overview,
@@ -597,7 +635,7 @@ describe("FinancialOverview", () => {
         realizedExpenses: "1700.00",
         expectedBalance: "3200.00",
         recordedBalance: "3100.00",
-        undatedRecurringRealizations: 1,
+        undatedRecurringRealizations: 0,
         completeness: "recorded_only" as const,
       },
       entries: [
@@ -611,21 +649,6 @@ describe("FinancialOverview", () => {
           expectedDate: "2026-10-10",
           actualAmount: null,
           actualDate: null,
-        },
-      ],
-      recurringOccurrences: [
-        {
-          id: "recurrence-1:2026-10-11",
-          recurrenceId: "recurrence-1",
-          kind: "EXPENSE" as const,
-          description: "Internet",
-          category: "Serviços",
-          essential: false,
-          dueDate: "2026-10-11",
-          expectedAmount: "120.00",
-          actualAmount: "120.00",
-          actualDate: null,
-          status: "realized" as const,
         },
       ],
       history: {
@@ -670,8 +693,8 @@ describe("FinancialOverview", () => {
 
     expect(await screen.findByText("Conta de luz")).toBeTruthy();
     expect(
-      screen.getByText(/1 ocorrência\(s\) realizada\(s\) sem data/),
-    ).toBeTruthy();
+      screen.getByText("Resultado líquido do mês").parentElement?.textContent,
+    ).toContain("não é o saldo da conta bancária");
     expect(
       screen.getByText("Entradas realizadas").parentElement?.parentElement
         ?.textContent,
@@ -720,16 +743,6 @@ describe("FinancialOverview", () => {
         "Não foi possível salvar o lançamento.",
       ),
     );
-
-    await user.click(
-      screen.getByRole("button", { name: /Ações para Internet/ }),
-    );
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Editar recorrência" }),
-    );
-    expect(
-      await screen.findByRole("dialog", { name: "Gerenciar recorrências" }),
-    ).toBeTruthy();
   }, 10_000);
 
   it("marks negative balances and refreshes the overview after deleting an entry", async () => {
@@ -775,7 +788,7 @@ describe("FinancialOverview", () => {
         ?.className,
     ).toContain("text-status-danger");
     expect(
-      screen.getByText("Saldo realizado").parentElement?.parentElement
+      screen.getByText("Resultado líquido do mês").parentElement?.parentElement
         ?.className,
     ).toContain("text-status-danger");
 

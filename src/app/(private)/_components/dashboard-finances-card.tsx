@@ -114,7 +114,10 @@ export function DashboardFinancesCard() {
                 </p>
               </div>
               <div className="min-w-0">
-                <p className="mb-1 text-muted-foreground">Saldo</p>
+                <p className="mb-1 text-muted-foreground">Resultado líquido</p>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  Entradas menos saídas registradas; não é saldo bancário.
+                </p>
                 <p className="text-xs text-muted-foreground">
                   Previsto{" "}
                   <strong
@@ -128,7 +131,7 @@ export function DashboardFinancesCard() {
                   </strong>
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Realizado{" "}
+                  No mês{" "}
                   <strong
                     className={
                       Number(data?.summary.recordedBalance) < 0

@@ -706,15 +706,15 @@ describe("FinancialService", () => {
       expectedIncome: "3000.00",
       realizedIncome: "2900.00",
       expectedExpenses: "790.00",
-      realizedExpenses: "825.00",
+      realizedExpenses: "655.00",
       expectedBalance: "2210.00",
-      recordedBalance: "2075.00",
-      undatedRecurringRealizations: 1,
+      recordedBalance: "2245.00",
+      undatedRecurringRealizations: 0,
       completeness: "recorded_only",
     });
     expect(result.entries).toHaveLength(5);
     expect(result.entries[0].categoryName).toBe("Salário");
-    expect(result.recurringOccurrences).toHaveLength(4);
+    expect(result).not.toHaveProperty("recurringOccurrences");
     expect(result.history.months).toHaveLength(12);
     expect(result.history.months[0]).toMatchObject({
       month: "2025-11",
@@ -725,13 +725,14 @@ describe("FinancialService", () => {
     expect(result.history.months[10]).toMatchObject({
       month: "2026-09",
       expectedExpenses: "105.00",
-      realizedExpenses: "5.00",
+      realizedExpenses: null,
     });
     expect(result.history.months[11]).toMatchObject({
       month: "2026-10",
       expectedExpenses: "790.00",
-      realizedExpenses: "825.00",
-      undatedRecurringRealizations: 1,
+      realizedExpenses: "655.00",
+      actualRecordCount: 4,
+      undatedRecurringRealizations: 0,
     });
     expect(result.history.explanation).toContain("não são tratados como zero");
   });
@@ -992,7 +993,6 @@ describe("FinancialService", () => {
         recordedBalance: null,
         completeness: "no_data",
       },
-      recurringOccurrences: [],
       history: {
         months: expect.arrayContaining([
           expect.objectContaining({ month: "2026-10", expectedExpenses: null }),
@@ -1011,14 +1011,6 @@ describe("FinancialService", () => {
         realizedExpenses: null,
         completeness: "recorded_only",
       },
-      recurringOccurrences: [
-        expect.objectContaining({
-          dueDate: "2026-10-10",
-          expectedAmount: "100.00",
-          actualAmount: null,
-          actualDate: null,
-        }),
-      ],
     });
   });
 
@@ -1031,7 +1023,6 @@ describe("FinancialService", () => {
         expectedExpenses: null,
         realizedExpenses: null,
       },
-      recurringOccurrences: [],
       history: {
         completeness: "recorded_only",
       },
@@ -1059,17 +1050,12 @@ describe("FinancialService", () => {
     const result = await service.getMonthlyOverview("2026-10");
     expect(result.summary).toMatchObject({
       expectedIncome: "5000.00",
-      realizedIncome: "4800.00",
+      realizedIncome: null,
       expectedExpenses: null,
       realizedExpenses: null,
       recordedBalance: null,
     });
-    expect(result.recurringOccurrences).toHaveLength(1);
-    expect(result.recurringOccurrences[0]).toMatchObject({
-      kind: "INCOME",
-      expectedAmount: "5000.00",
-      actualAmount: "4800.00",
-    });
+    expect(result).not.toHaveProperty("recurringOccurrences");
   });
 
   it("formats a negative recorded balance without turning missing income into zero", async () => {
@@ -1137,6 +1123,16 @@ describe("FinancialService", () => {
   it("closes an elapsed month from its current summary and rejects future months", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
+    const recurrence = recurringExpense();
+    repositories.listRecurrences.mockResolvedValue([recurrence]);
+    repositories.listOccurrencesForFinancialPeriod.mockResolvedValue([
+      occurrence({
+        recurrenceId: recurrence.id,
+        expectedAmount: "100.00",
+        actualAmount: "110.00",
+        actualDate: "2026-10-12",
+      }),
+    ]);
     const result = await service.closeMonth({ month: "2026-10" });
     expect(result).toMatchObject({
       month: "2026-10",
@@ -1145,7 +1141,7 @@ describe("FinancialService", () => {
         totals: {
           expectedIncome: null,
           realizedIncome: null,
-          expectedExpenses: null,
+          expectedExpenses: "100.00",
           realizedExpenses: null,
           expectedBalance: null,
           recordedBalance: null,

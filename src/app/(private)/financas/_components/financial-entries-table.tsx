@@ -7,7 +7,6 @@ import {
   CalendarCheck,
   MoreHorizontal,
   Pencil,
-  CircleStop,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -78,42 +77,20 @@ export type FinancialEntryRow = {
   actualAmount: string | null;
   actualDate: string | null;
 };
-type OccurrenceRow = {
-  id: string;
-  recurrenceId: string;
-  kind: Kind;
-  description: string;
-  category: string | null;
-  dueDate: string;
-  expectedAmount: string | null;
-  actualAmount: string | null;
-  actualDate: string | null;
-  status: "planned" | "realized";
-};
 type TableRow = {
   id: string;
   kind: Kind;
   description: string;
-  categoryName?: string;
-  category?: string | null;
+  categoryName: string;
   due: string | null;
   amount: string | null;
   realAmount: string | null;
   realDate: string | null;
   state: "Previsto" | "Realizado";
-} & (
-  | {
-      recordType: "entry";
-      source: "Avulso" | "Recorrente";
-      categoryId: string;
-      entry: FinancialEntryRow;
-    }
-  | {
-      recordType: "occurrence";
-      source: "Recorrente";
-      recurrenceId: string;
-    }
-);
+  source: "Avulso" | "Recorrente";
+  categoryId: string;
+  entry: FinancialEntryRow;
+};
 
 const money = (value: string | null) =>
   value === null ? "Sem registro" : formatCurrency(Number(value));
@@ -138,24 +115,18 @@ const sourceFilterOptions = [
 
 export function FinancialEntriesTable({
   entries,
-  occurrences,
   readOnly,
   onEdit,
-  onEditRecurrence,
   onSaved,
 }: {
   entries: FinancialEntryRow[];
-  occurrences: OccurrenceRow[];
   readOnly: boolean;
   onEdit: (entry: FinancialEntryRow) => void;
-  onEditRecurrence?: (recurrenceId: string) => void;
   onSaved?: () => void;
 }) {
   const [rowsToDelete, setRowsToDelete] = useState<TableRow[]>([]);
-  const [recurrenceToEnd, setRecurrenceToEnd] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
-  const [endingRecurrence, setEndingRecurrence] = useState(false);
   const [realizing, setRealizing] = useState<TableRow | null>(null);
   const [realizedAmount, setRealizedAmount] = useState("");
   const [actualDate, setActualDate] = useState("");
@@ -172,73 +143,31 @@ export function FinancialEntriesTable({
   }, [realizedAmount]);
   async function deleteEntries(targetRows: TableRow[]) {
     setDeleting(true);
-    const tasks: { rowIds: string[]; run: () => Promise<unknown> }[] = [];
-    const recurrenceRows = new Map<string, string[]>();
-    targetRows.forEach((row) => {
-      if (row.recordType === "entry") {
-        tasks.push({
-          rowIds: [row.id],
-          run: () =>
-            apiRequest(
-              `/api/financial-entries?id=${encodeURIComponent(row.entry.id)}`,
-              { method: "DELETE" },
-              "Não foi possível excluir o lançamento.",
-            ),
-        });
-      } else {
-        recurrenceRows.set(row.recurrenceId, [
-          ...(recurrenceRows.get(row.recurrenceId) ?? []),
-          row.id,
-        ]);
-      }
-    });
-    recurrenceRows.forEach((rowIds, recurrenceId) => {
-      tasks.push({
-        rowIds,
-        run: () =>
-          apiRequest<{ action: "deleted" | "ended" }>(
-            `/api/financial-recurrences?id=${encodeURIComponent(recurrenceId)}`,
-            { method: "DELETE" },
-            "Não foi possível remover a recorrência.",
-          ),
-      });
-    });
-    const results = await Promise.allSettled(tasks.map(({ run }) => run()));
+    const tasks = targetRows.map((row) =>
+      apiRequest(
+        `/api/financial-entries?id=${encodeURIComponent(row.entry.id)}`,
+        { method: "DELETE" },
+        "Não foi possível excluir o lançamento.",
+      ),
+    );
+    const results = await Promise.allSettled(tasks);
     const failedRowIds = new Set(
-      tasks.flatMap((task, index) =>
-        results[index].status === "rejected" ? task.rowIds : [],
+      results.flatMap((result, index) =>
+        result.status === "rejected" ? [targetRows[index].id] : [],
       ),
     );
     const failedRows = targetRows.filter((row) => failedRowIds.has(row.id));
     const failedTaskCount = results.filter(
       (result) => result.status === "rejected",
     ).length;
-    const completedCount = tasks.length - failedTaskCount;
+    const completedCount = targetRows.length - failedTaskCount;
     setSelectedIds(new Set(failedRows.map((row) => row.id)));
     onSaved?.();
     if (failedRows.length === 0) {
-      if (targetRows.length === 1 && targetRows[0].recordType === "entry") {
+      if (targetRows.length === 1) {
         toast.success("Lançamento excluído.");
-      } else if (
-        targetRows.length === 1 &&
-        targetRows[0].recordType === "occurrence"
-      ) {
-        const result = results[0] as PromiseFulfilledResult<{
-          action?: "deleted" | "ended";
-        } | null>;
-        const action = result.value?.action ?? "deleted";
-        toast.success(
-          action === "ended"
-            ? "Recorrência encerrada. O histórico foi mantido."
-            : "Recorrência excluída.",
-        );
       } else {
-        const hasRecurrence = recurrenceRows.size > 0;
-        toast.success(
-          hasRecurrence
-            ? `${completedCount} ações concluídas. O histórico realizado das recorrências foi mantido.`
-            : `${targetRows.length} lançamentos excluídos.`,
-        );
+        toast.success(`${targetRows.length} lançamentos excluídos.`);
       }
       setRowsToDelete([]);
     } else {
@@ -258,9 +187,7 @@ export function FinancialEntriesTable({
               targetRows.length === 1
             ? singleFailure.reason instanceof Error
               ? singleFailure.reason.message
-              : targetRows[0].recordType === "entry"
-                ? "Não foi possível excluir o lançamento. Tente novamente."
-                : "Não foi possível remover a recorrência. Tente novamente."
+              : "Não foi possível excluir o lançamento. Tente novamente."
             : `Não foi possível remover ${failedActionCount} registros selecionados. Tente novamente.`,
       );
       setRowsToDelete(failedRows);
@@ -276,31 +203,6 @@ export function FinancialEntriesTable({
     });
   }
 
-  async function endRecurrence() {
-    setEndingRecurrence(true);
-    try {
-      const result = await apiRequest<{ action: "deleted" | "ended" }>(
-        `/api/financial-recurrences?id=${encodeURIComponent(recurrenceToEnd!)}`,
-        { method: "DELETE" },
-        "Não foi possível encerrar a recorrência.",
-      );
-      toast.success(
-        result.action === "deleted"
-          ? "Recorrência excluída."
-          : "Recorrência encerrada. O histórico foi mantido.",
-      );
-      setRecurrenceToEnd(null);
-      onSaved?.();
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível encerrar a recorrência.",
-      );
-    } finally {
-      setEndingRecurrence(false);
-    }
-  }
   function openRealization(row: TableRow) {
     setRealizing(row);
     setRealizedAmount(
@@ -332,43 +234,27 @@ export function FinancialEntriesTable({
     event.preventDefault();
     setRealizingBusy(true);
     try {
-      if (row.recordType === "entry") {
-        await apiRequest(
-          "/api/financial-entries",
-          {
-            method: "PATCH",
-            body: JSON.stringify({
-              id: row.entry.id,
-              kind: row.entry.kind,
-              description: row.entry.description,
-              categoryId: row.entry.categoryId,
-              recurrenceId: row.entry.recurrenceId ?? null,
-              expectedAmount:
-                row.entry.expectedAmount === null
-                  ? null
-                  : Number(row.entry.expectedAmount),
-              expectedDate: row.entry.expectedDate,
-              actualAmount: parseBrazilianAmount(realizedAmount),
-              actualDate,
-            }),
-          },
-          "Não foi possível registrar a realização.",
-        );
-      } else {
-        await apiRequest(
-          "/api/financial-recurrences/occurrences",
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              recurrenceId: row.recurrenceId!,
-              dueDate: row.due!,
-              actualDate,
-              actualAmount: parseBrazilianAmount(realizedAmount),
-            }),
-          },
-          "Não foi possível registrar a realização.",
-        );
-      }
+      await apiRequest(
+        "/api/financial-entries",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            id: row.entry.id,
+            kind: row.entry.kind,
+            description: row.entry.description,
+            categoryId: row.entry.categoryId,
+            recurrenceId: row.entry.recurrenceId ?? null,
+            expectedAmount:
+              row.entry.expectedAmount === null
+                ? null
+                : Number(row.entry.expectedAmount),
+            expectedDate: row.entry.expectedDate,
+            actualAmount: parseBrazilianAmount(realizedAmount),
+            actualDate,
+          }),
+        },
+        "Não foi possível registrar a realização.",
+      );
       toast.success("Realização registrada.");
       setRealizing(null);
       onSaved?.();
@@ -386,7 +272,6 @@ export function FinancialEntriesTable({
     ...entries.map((entry) => ({
       ...entry,
       entry,
-      recordType: "entry" as const,
       source: entry.recurrenceId
         ? ("Recorrente" as const)
         : ("Avulso" as const),
@@ -399,30 +284,13 @@ export function FinancialEntriesTable({
           ? ("Previsto" as const)
           : ("Realizado" as const),
     })),
-    ...occurrences.map((item) => ({
-      ...item,
-      recordType: "occurrence" as const,
-      source: "Recorrente" as const,
-      due: item.dueDate,
-      amount: item.expectedAmount,
-      realAmount: item.actualAmount,
-      realDate: item.actualDate,
-      state:
-        item.status === "realized"
-          ? ("Realizado" as const)
-          : ("Previsto" as const),
-    })),
   ].sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
   const allRowsSelected =
     rows.length > 0 && selectedRows.length === rows.length;
   const someRowsSelected = selectedRows.length > 0 && !allRowsSelected;
   const categoryFilterOptions = Array.from(
-    new Set(
-      rows
-        .map((row) => row.categoryName ?? row.category ?? "Sem categoria")
-        .filter(Boolean),
-    ),
+    new Set(rows.map((row) => row.categoryName).filter(Boolean)),
   )
     .sort((left, right) => left.localeCompare(right, "pt-BR"))
     .map((category) => ({ value: category, label: category }));
@@ -463,9 +331,7 @@ export function FinancialEntriesTable({
         <div className="flex justify-center">
           <Checkbox
             checked={selectedIds.has(row.id)}
-            disabled={
-              readOnly || (row.recordType === "occurrence" && !row.recurrenceId)
-            }
+            disabled={readOnly}
             aria-label={`Selecionar ${row.description}`}
             onCheckedChange={(checked) => toggleRow(row, checked === true)}
           />
@@ -493,10 +359,10 @@ export function FinancialEntriesTable({
       id: "category",
       label: "Categoria",
       width: "160px",
-      value: (row) => row.categoryName ?? row.category ?? "Sem categoria",
+      value: (row) => row.categoryName,
       filterOptions: categoryFilterOptions,
       render: (row) => {
-        const name = row.categoryName ?? row.category ?? "Sem categoria";
+        const name = row.categoryName;
         const Icon = getFinancialCategoryIcon(name);
         return (
           <span className="inline-flex items-center gap-2">
@@ -594,46 +460,6 @@ export function FinancialEntriesTable({
       sortable: false,
       render: (row) => {
         if (readOnly) return null;
-        if (row.recordType === "occurrence") {
-          const recurrenceId = row.recurrenceId;
-          return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Ações para ${row.description} em ${dateLabel(row.due)}`}
-                >
-                  <MoreHorizontal className="size-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {onEditRecurrence && (
-                  <DropdownMenuItem
-                    onSelect={() => onEditRecurrence(recurrenceId)}
-                  >
-                    <Pencil aria-hidden="true" /> Editar recorrência
-                  </DropdownMenuItem>
-                )}
-                {(row.state === "Previsto" ||
-                  (row.realAmount !== null && row.realDate === null)) && (
-                  <DropdownMenuItem onSelect={() => openRealization(row)}>
-                    <CalendarCheck aria-hidden="true" />
-                    {row.state === "Previsto"
-                      ? "Registrar realizado"
-                      : "Informar data realizada"}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="text-status-danger focus:text-status-danger"
-                  onSelect={() => setRecurrenceToEnd(recurrenceId)}
-                >
-                  <CircleStop aria-hidden="true" /> Excluir recorrência
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          );
-        }
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -720,23 +546,7 @@ export function FinancialEntriesTable({
                   : `Remover ${rowsToDelete.length} registros selecionados?`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {
-                  rowsToDelete.filter((row) => row.recordType === "entry")
-                    .length
-                }{" "}
-                lançamentos avulsos serão excluídos.{" "}
-                {
-                  new Set(
-                    rowsToDelete.flatMap((row) =>
-                      row.recordType === "occurrence" && row.recurrenceId
-                        ? [row.recurrenceId]
-                        : [],
-                    ),
-                  ).size
-                }{" "}
-                modelos recorrentes selecionados serão removidos ou encerrados
-                para parar previsões futuras; o histórico realizado será
-                preservado.
+                {rowsToDelete.length} lançamento(s) serão excluídos.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -757,35 +567,6 @@ export function FinancialEntriesTable({
           </AlertDialogContent>
         </AlertDialog>
       )}
-      <AlertDialog
-        open={Boolean(recurrenceToEnd)}
-        onOpenChange={(open) => !open && setRecurrenceToEnd(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir recorrência?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Sem valores realizados, a recorrência será excluída. Se houver
-              histórico realizado, ela será encerrada para parar as próximas
-              previsões e manter esse histórico.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={endingRecurrence}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={endingRecurrence}
-              onClick={(event) => {
-                event.preventDefault();
-                void endRecurrence();
-              }}
-            >
-              {endingRecurrence ? "Removendo…" : "Excluir recorrência"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <Dialog
         open={Boolean(realizing)}
         onOpenChange={(open) => !open && setRealizing(null)}
@@ -794,8 +575,7 @@ export function FinancialEntriesTable({
           <DialogHeader>
             <DialogTitle>Registrar realização</DialogTitle>
             <DialogDescription>
-              {realizing?.description} ·{" "}
-              {realizing?.recordType === "entry" ? "previsão" : "vencimento"}{" "}
+              {realizing?.description} · previsão{" "}
               {dateLabel(realizing?.due ?? null)}
             </DialogDescription>
           </DialogHeader>
