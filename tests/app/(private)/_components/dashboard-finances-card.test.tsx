@@ -54,20 +54,18 @@ describe("DashboardFinancesCard", () => {
     });
     renderCard();
 
-    expect(await screen.findByText(/Entradas/)).toBeTruthy();
+    expect(await screen.findByText("Entradas", { exact: true })).toBeTruthy();
     expect(
       screen.getByText("Entradas").parentElement?.parentElement?.textContent,
     ).toContain("3.800,00");
     expect(
       screen.getByText("Saídas").parentElement?.parentElement?.textContent,
     ).toContain("1.300,00");
-    expect(screen.getByText("Saldo").parentElement?.textContent).toContain(
-      "2.500,00",
-    );
+    expect(screen.getByText(/Entradas menos saídas registradas/)).toBeTruthy();
     expect(screen.getByText(/2\.500,00/).className).toContain(
       "text-status-danger",
     );
-    expect(screen.getByText("Saldo").parentElement?.textContent).toContain(
+    expect(screen.getByText("No mês").parentElement?.textContent).toContain(
       "2.200,00",
     );
     expect(screen.getByText(/2\.200,00/).className).toContain(
@@ -102,7 +100,7 @@ describe("DashboardFinancesCard", () => {
     expect(await screen.findByText("Resumo indisponível")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Tentar novamente/ }));
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText(/Entradas/)).toBeTruthy();
+    expect(await screen.findByText("Entradas", { exact: true })).toBeTruthy();
   });
 
   it("explains a new financial profile and support-mode read-only access", async () => {

@@ -547,22 +547,11 @@ export class FinancialService {
       const dueOccurrences = knownSavedOccurrences.filter((occurrence) =>
         isWithin(occurrence.dueDate, range.startDate, range.endDate),
       );
-      const actualOccurrences = knownSavedOccurrences.filter((occurrence) =>
-        isWithin(occurrence.actualDate, range.startDate, range.endDate),
-      );
       const expectedIncomeOccurrences = dueOccurrences.filter(
         (occurrence) =>
           occurrenceDetails.get(occurrence.recurrenceId)?.kind === "INCOME",
       );
-      const realizedIncomeOccurrences = actualOccurrences.filter(
-        (occurrence) =>
-          occurrenceDetails.get(occurrence.recurrenceId)?.kind === "INCOME",
-      );
       const expectedExpenseOccurrences = dueOccurrences.filter(
-        (occurrence) =>
-          occurrenceDetails.get(occurrence.recurrenceId)?.kind === "EXPENSE",
-      );
-      const realizedExpenseOccurrences = actualOccurrences.filter(
         (occurrence) =>
           occurrenceDetails.get(occurrence.recurrenceId)?.kind === "EXPENSE",
       );
@@ -578,9 +567,6 @@ export class FinancialService {
         ...actualEntries
           .filter((entry) => entry.kind === "INCOME")
           .map((entry) => entry.actualAmount),
-        ...realizedIncomeOccurrences.map(
-          (occurrence) => occurrence.actualAmount,
-        ),
       ]);
       const expectedExpenses = sumAmounts([
         ...expectedEntries
@@ -594,9 +580,6 @@ export class FinancialService {
         ...actualEntries
           .filter((entry) => entry.kind === "EXPENSE")
           .map((entry) => entry.actualAmount),
-        ...realizedExpenseOccurrences.map(
-          (occurrence) => occurrence.actualAmount,
-        ),
       ]);
       return {
         month: historyMonth,
@@ -606,11 +589,8 @@ export class FinancialService {
         realizedExpenses,
         recordedBalance: difference(realizedIncome, realizedExpenses),
         expectedRecordCount: expectedEntries.length + dueOccurrences.length,
-        actualRecordCount: actualEntries.length + actualOccurrences.length,
-        undatedRecurringRealizations: dueOccurrences.filter(
-          (occurrence) =>
-            occurrence.actualAmount !== null && occurrence.actualDate === null,
-        ).length,
+        actualRecordCount: actualEntries.length,
+        undatedRecurringRealizations: 0,
         completeness: "recorded_only" as const,
       };
     });
@@ -629,14 +609,6 @@ export class FinancialService {
       (occurrence) =>
         isWithin(
           occurrence.dueDate,
-          currentRange.startDate,
-          currentRange.endDate,
-        ),
-    );
-    const actualOccurrences = [...monthlyOccurrences.values()].filter(
-      (occurrence) =>
-        isWithin(
-          occurrence.actualDate,
           currentRange.startDate,
           currentRange.endDate,
         ),
@@ -661,17 +633,11 @@ export class FinancialService {
       ...actualEntries
         .filter((entry) => entry.kind === "INCOME")
         .map((entry) => entry.actualAmount),
-      ...actualOccurrences
-        .filter((occurrence) => occurrence.kind === "INCOME")
-        .map((occurrence) => occurrence.actualAmount),
     ]);
     const realizedExpenses = sumAmounts([
       ...actualEntries
         .filter((entry) => entry.kind === "EXPENSE")
         .map((entry) => entry.actualAmount),
-      ...actualOccurrences
-        .filter((occurrence) => occurrence.kind === "EXPENSE")
-        .map((occurrence) => occurrence.actualAmount),
     ]);
     const expectedIncome = expectedIncomeWithRecurrences;
     const realizedIncome = realizedIncomeWithRecurrences;
@@ -681,16 +647,7 @@ export class FinancialService {
       expectedExpenses,
       realizedExpenses,
     ].some((value) => value !== null);
-    const undatedRecurringRealizations = knownSavedOccurrences.filter(
-      (occurrence) =>
-        isWithin(
-          occurrence.dueDate,
-          currentRange.startDate,
-          currentRange.endDate,
-        ) &&
-        occurrence.actualAmount !== null &&
-        occurrence.actualDate === null,
-    ).length;
+    const undatedRecurringRealizations = 0;
 
     return {
       month: monthValue,
@@ -708,14 +665,11 @@ export class FinancialService {
       },
       close,
       entries: currentEntries,
-      recurringOccurrences: [...monthlyOccurrences.values()].sort(
-        (left, right) => left.dueDate.localeCompare(right.dueDate),
-      ),
       history: {
         months: history,
         completeness: "recorded_only" as const,
         explanation:
-          "Os totais dos meses anteriores usam somente registros e ocorrências salvos; as configurações atuais de recorrência não são projetadas para trás. As recorrências geram previsão apenas no mês selecionado atual ou futuro. Realizações sem data realizada ficam fora do total mensal até que essa data seja informada. Meses sem registros permanecem sem valor e não são tratados como zero nem como períodos completos.",
+          "Os valores realizados consideram apenas lançamentos manuais ou importados. Ocorrências antigas de recorrência são preservadas, mas não contam como realizações. As configurações atuais de recorrência entram apenas nas previsões do mês selecionado atual ou futuro. Meses sem registros permanecem sem valor e não são tratados como zero nem como períodos completos.",
       },
       categories,
     };

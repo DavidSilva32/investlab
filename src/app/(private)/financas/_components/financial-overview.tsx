@@ -86,7 +86,6 @@ type Overview = {
     completeness: "recorded_only" | "no_data";
   };
   entries: Entry[];
-  recurringOccurrences: Occurrence[];
   history: {
     months: HistoryMonth[];
     completeness: "recorded_only";
@@ -284,7 +283,7 @@ export function FinancialOverview() {
                     : "text-foreground border-l-border",
               },
               {
-                label: "Saldo realizado",
+                label: "Resultado líquido do mês",
                 value: data?.summary.recordedBalance,
                 tone:
                   Number(data?.summary.recordedBalance) < 0
@@ -298,6 +297,12 @@ export function FinancialOverview() {
                   <p className="mt-2 text-2xl font-semibold tabular-nums">
                     {money(value as string | null)}
                   </p>
+                  {label === "Resultado líquido do mês" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Entradas menos saídas registradas; não é o saldo da conta
+                      bancária.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -315,16 +320,6 @@ export function FinancialOverview() {
             </p>
           )}
           <FinancialCapacitySimulator key={month} month={month} />
-          {!!data?.summary.undatedRecurringRealizations && (
-            <p
-              role="status"
-              className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
-            >
-              {data.summary.undatedRecurringRealizations} ocorrência(s)
-              realizada(s) sem data do pagamento não entram no total mensal.
-              Informe a data ao registrar a ocorrência.
-            </p>
-          )}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">
@@ -335,16 +330,11 @@ export function FinancialOverview() {
               <FinancialEntriesTable
                 key={month}
                 entries={data?.entries ?? []}
-                occurrences={data?.recurringOccurrences ?? []}
                 readOnly={!canEdit}
                 onSaved={() => void invalidateFinances(client)}
                 onEdit={(entry) => {
                   setEditingEntry(entry);
                   setEntryOpen(true);
-                }}
-                onEditRecurrence={(recurrenceId) => {
-                  setEditingRecurrenceId(recurrenceId);
-                  setRecurrencesOpen(true);
                 }}
               />
             </CardContent>

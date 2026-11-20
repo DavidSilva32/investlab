@@ -99,7 +99,6 @@ const overview = {
       actualDate: null,
     },
   ],
-  recurringOccurrences: [],
   history: {
     months: [],
     completeness: "recorded_only" as const,
@@ -157,79 +156,6 @@ describe("FinancialOverview controlled entry dialog callback", () => {
     expect(
       await screen.findByRole("dialog", { name: "Novo lançamento" }),
     ).toBeTruthy();
-  });
-
-  it("opens the recurrence editor from an occurrence in the monthly table", async () => {
-    const user = userEvent.setup();
-    api.request.mockImplementation((url: string) =>
-      url.startsWith("/api/finance-overview")
-        ? Promise.resolve({
-            ...overview,
-            recurringOccurrences: [
-              {
-                id: "recurrence-1:2026-10-10",
-                recurrenceId: "recurrence-1",
-                kind: "EXPENSE",
-                description: "Aluguel",
-                category: "Moradia",
-                essential: true,
-                dueDate: "2026-10-10",
-                expectedAmount: "550.00",
-                actualAmount: null,
-                actualDate: null,
-                status: "planned",
-              },
-            ],
-          })
-        : Promise.resolve({
-            recurrences: [
-              {
-                id: "recurrence-1",
-                kind: "EXPENSE",
-                description: "Aluguel",
-                categoryId,
-                amount: "550.00",
-                frequency: "MONTHLY",
-                firstDueDate: "2026-10-10",
-                essential: true,
-                active: true,
-              },
-            ],
-            recurrenceOccurrences: [],
-          }),
-    );
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <FinancialOverview />
-      </QueryClientProvider>,
-    );
-
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Ações para Aluguel em 10/10/2026",
-      }),
-    );
-    await user.click(
-      await screen.findByRole("menuitem", { name: "Editar recorrência" }),
-    );
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Editar recorrência",
-    });
-    expect(within(dialog).getByLabelText("Descrição")).toHaveProperty(
-      "value",
-      "Aluguel",
-    );
-    await user.click(
-      within(dialog).getByRole("button", {
-        name: "Confirmar abertura da recorrência",
-      }),
-    );
-    expect(within(dialog).getByText("recurrence-1")).toBeTruthy();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Consumir pedido de edição" }),
-    );
-    expect(within(dialog).getByText("no-pending-edit")).toBeTruthy();
   });
 
   it("keeps the pending recurrence request when the sheet confirms it is open", async () => {
