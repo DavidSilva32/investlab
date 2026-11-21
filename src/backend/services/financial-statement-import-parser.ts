@@ -8,7 +8,6 @@ export type StatementRawRow = {
   sourceRow: number;
   values: StatementRawValue[];
 };
-export type FinancialStatementSource = "GENERIC" | "INTER_CREDIT_CARD";
 export type StatementColumnMapping = {
   dateColumn: number;
   descriptionColumn: number;
@@ -17,9 +16,6 @@ export type StatementColumnMapping = {
   creditColumn?: number;
   dateFormat: "DMY" | "MDY" | "ISO";
   decimalSeparator: "COMMA" | "DOT";
-  source?: FinancialStatementSource;
-  sourceCategoryColumn?: number;
-  transactionTypeColumn?: number;
 };
 
 export type ParsedStatementRow = {
@@ -29,7 +25,6 @@ export type ParsedStatementRow = {
   actualDate: string | null;
   amount: number | null;
   errors: string[];
-  sourceCategory?: string | null;
 };
 
 function normalizeHeader(value: unknown) {
@@ -41,15 +36,13 @@ function normalizeHeader(value: unknown) {
     .toLocaleLowerCase("pt-BR");
 }
 
-function detectInterCreditCardSource(
-  headers: string[],
-): FinancialStatementSource | undefined {
+function isInterCreditCardStatement(headers: string[]) {
   const expected = ["data", "lancamento", "categoria", "tipo", "valor"];
   const normalized = headers.map(normalizeHeader);
   if (expected.some((header) => !normalized.includes(header))) {
     return undefined;
   }
-  return "INTER_CREDIT_CARD";
+  return expected.every((header) => normalized.includes(header));
 }
 
 const MAX_STATEMENT_ROWS = 500;
@@ -221,7 +214,6 @@ export function parseStatementFile(
   hash: string;
   headers: string[];
   rows: StatementRawRow[];
-  source?: FinancialStatementSource;
 } {
   if (!/\.(csv|xls|xlsx)$/i.test(fileName)) {
     throw new ApplicationError("Use um arquivo CSV, XLS ou XLSX.", 400);
@@ -299,6 +291,12 @@ export function parseStatementFile(
     const header = String(value ?? "").trim();
     return header || `Coluna ${index + 1}`;
   });
+  if (isInterCreditCardStatement(headers)) {
+    throw new ApplicationError(
+      "A importação de extratos de cartão não está disponível.",
+      400,
+    );
+  }
   const rawRows: StatementRawRow[] = rows.slice(1).flatMap((row, index) =>
     row.some((value) => String(value).trim() !== "")
       ? [
@@ -317,12 +315,10 @@ export function parseStatementFile(
       : [],
   );
 
-  const source = detectInterCreditCardSource(headers);
   return {
     hash: createHash("sha256").update(buffer).digest("hex"),
     headers,
     rows: rawRows,
-    ...(source ? { source } : {}),
   };
 }
 
@@ -426,18 +422,6 @@ export function parseStatementRows(
       errors.push("A descrição deve ter até 120 caracteres.");
     if (!actualDate) errors.push("Confira a data e o formato selecionado.");
 
-    const sourceCategory =
-      mapping.sourceCategoryColumn === undefined
-        ? undefined
-        : String(cell(row, mapping.sourceCategoryColumn)).trim() || null;
-    const transactionType =
-      mapping.transactionTypeColumn === undefined
-        ? undefined
-        : normalizeHeader(cell(row, mapping.transactionTypeColumn)).replace(
-            /\s+/g,
-            " ",
-          );
-
     let amount: number | null = null;
     let kind: ParsedStatementRow["kind"] = null;
     if (signedAmount) {
@@ -472,26 +456,6 @@ export function parseStatementRows(
       } else
         errors.push("A linha precisa ter um débito ou crédito maior que zero.");
     }
-    if (mapping.source === "INTER_CREDIT_CARD") {
-      const signed = parseAmount(
-        cell(row, mapping.amountColumn!),
-        mapping.decimalSeparator,
-      );
-      if (signed !== null && signed < 0) {
-        kind = null;
-        amount = null;
-        errors.push(
-          "Confira este valor negativo; estornos do cartão precisam de revisão antes da importação.",
-        );
-      } else if (transactionType !== "compra a vista") {
-        kind = null;
-        errors.push(
-          "Confira o tipo deste lançamento do cartão antes de importar.",
-        );
-      } else if (amount !== null && amount > 0) {
-        kind = "EXPENSE";
-      }
-    }
     return {
       sourceRow: row.sourceRow,
       kind,
@@ -499,7 +463,6 @@ export function parseStatementRows(
       actualDate,
       amount,
       errors,
-      ...(mapping.source === "INTER_CREDIT_CARD" ? { sourceCategory } : {}),
     };
   });
 }

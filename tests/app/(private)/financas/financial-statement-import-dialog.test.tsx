@@ -157,38 +157,15 @@ describe("FinancialStatementImportDialog", () => {
     ).toBeNull();
   });
 
-  it("shows the Inter source category and identifies card purchase dates", async () => {
+  it("shows the server rejection when a card statement is uploaded", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            hash: "i".repeat(64),
-            source: "CARD",
-            headers: ["Data", "Lançamento", "Categoria", "Tipo", "Valor"],
-            mapping: {
-              dateColumn: 0,
-              descriptionColumn: 1,
-              amountColumn: 4,
-              dateFormat: "DMY",
-              decimalSeparator: "COMMA",
-            },
-            rows: [
-              {
-                sourceRow: 2,
-                kind: "EXPENSE",
-                description: "DL *UberRides",
-                actualDate: "2026-11-14",
-                amount: 14.96,
-                sourceCategory: "TRANSPORTE",
-                errors: [],
-                categoryId: null,
-                categorySource: null,
-                possibleDuplicate: false,
-              },
-            ],
+            message: "A importação de extratos de cartão não está disponível.",
           }),
-          { status: 200 },
+          { status: 400 },
         ),
       ),
     );
@@ -211,75 +188,11 @@ describe("FinancialStatementImportDialog", () => {
       },
     );
 
-    await screen.findAllByText("Categoria Inter: TRANSPORTE");
-    expect(
-      screen.getByText(/compras à vista serão despesas na data indicada/),
-    ).toBeTruthy();
-  });
-
-  it("shows the card double-count warning only when purchases and a bill payment appear", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          hash: "e".repeat(64),
-          headers: ["Data", "Descrição", "Valor"],
-          mapping: {
-            dateColumn: 0,
-            descriptionColumn: 1,
-            amountColumn: 2,
-            dateFormat: "DMY",
-            decimalSeparator: "COMMA",
-          },
-          rows: [
-            {
-              sourceRow: 2,
-              kind: "EXPENSE",
-              description: "Compra no crédito: mercado",
-              actualDate: "2026-11-14",
-              amount: 10,
-              errors: [],
-              categoryId: categories[0].id,
-              possibleDuplicate: false,
-            },
-            {
-              sourceRow: 3,
-              kind: "EXPENSE",
-              description: "Pagamento fatura cartão",
-              actualDate: "2026-11-14",
-              amount: 10,
-              errors: [],
-              categoryId: categories[0].id,
-              possibleDuplicate: false,
-            },
-          ],
-        }),
-        { status: 200 },
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "A importação de extratos de cartão não está disponível.",
       ),
     );
-    vi.stubGlobal("fetch", fetchMock);
-    render(
-      <FinancialStatementImportDialog
-        open
-        onOpenChange={() => {}}
-        categories={categories}
-        onImported={() => {}}
-      />,
-    );
-
-    fireEvent.change(
-      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
-      {
-        target: {
-          files: [new File(["synthetic"], "extrato.csv", { type: "text/csv" })],
-        },
-      },
-    );
-
-    expect(
-      await screen.findByText(
-        "O arquivo contém compras no cartão e pagamento de fatura. Revise para não contar as mesmas despesas duas vezes.",
-      ),
-    ).toBeTruthy();
   });
 
   it("maps an Inter-like statement, reviews categories, and confirms only after review", async () => {

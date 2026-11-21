@@ -88,114 +88,29 @@ describe("financial statement import parser", () => {
     ]);
   });
 
-  it("recognizes Inter card purchases as expenses and leaves unknown types for review", () => {
-    const parsed = parseStatementFile(
-      "cartao-inter.csv",
-      Buffer.from(
-        [
-          "Data,Lançamento,Categoria,Tipo,Valor",
-          '"14/11/2026","UBER *TRIP","TRANSPORTE","Compra à vista","R$ 14,96"',
-          '"10/11/2026","PAGAMENTO ON LINE","OUTROS","Compra à vista","R$ 819,07"',
-          '"09/11/2026","Compra parcelada","COMPRAS","Parcelamento","R$ 100,00"',
-          '"08/11/2026","Estorno","OUTROS","Compra à vista","-R$ 10,00"',
-          '"07/11/2026","Compra sem categoria","","Compra à vista","R$ 0,00"',
-        ].join("\n"),
-        "utf8",
+  it("rejects Inter card statements instead of importing card purchases", () => {
+    expect(() =>
+      parseStatementFile(
+        "cartao-inter.csv",
+        Buffer.from(
+          'Data,Lançamento,Categoria,Tipo,Valor\n14/11/2026,UBER,TRANSPORTE,Compra à vista,"R$ 14,96"',
+          "utf8",
+        ),
       ),
-    );
-
-    expect(parsed.source).toBe("INTER_CREDIT_CARD");
-    const rows = parseStatementRows(parsed.rows, {
-      dateColumn: 0,
-      descriptionColumn: 1,
-      sourceCategoryColumn: 2,
-      transactionTypeColumn: 3,
-      amountColumn: 4,
-      dateFormat: "DMY",
-      decimalSeparator: "COMMA",
-      source: "INTER_CREDIT_CARD",
-    });
-
-    expect(rows[0]).toMatchObject({
-      kind: "EXPENSE",
-      amount: 14.96,
-      sourceCategory: "TRANSPORTE",
-      errors: [],
-    });
-    expect(rows[1]).toMatchObject({
-      kind: "EXPENSE",
-      amount: 819.07,
-      sourceCategory: "OUTROS",
-      errors: [],
-    });
-    expect(rows[2]).toMatchObject({
-      kind: null,
-      amount: 100,
-      errors: ["Confira o tipo deste lançamento do cartão antes de importar."],
-    });
-    expect(rows[3]).toMatchObject({
-      kind: null,
-      amount: null,
-      errors: [
-        "Confira este valor negativo; estornos do cartão precisam de revisão antes da importação.",
-      ],
-    });
-    expect(rows[4]).toMatchObject({
-      kind: null,
-      amount: null,
-      sourceCategory: null,
-      errors: ["Confira o valor e o separador decimal."],
-    });
+    ).toThrow("A importação de extratos de cartão não está disponível.");
   });
 
-  it("detects Inter files with extra columns and refund-only or unknown-type rows", () => {
-    const parsed = parseStatementFile(
-      "cartao-inter.csv",
-      Buffer.from(
-        [
-          "Data,Lançamento,Categoria,Tipo,Valor,Observação",
-          '"08/11/2026","Estorno","OUTROS","Estorno","-R$ 10,00","crédito"',
-          '"09/11/2026","Tarifa","OUTROS","Tipo novo","R$ 2,00","revisar"',
-        ].join("\n"),
-        "utf8",
-      ),
-    );
-
-    expect(parsed.source).toBe("INTER_CREDIT_CARD");
-    const rows = parseStatementRows(parsed.rows, {
-      dateColumn: 0,
-      descriptionColumn: 1,
-      sourceCategoryColumn: 2,
-      transactionTypeColumn: 3,
-      amountColumn: 4,
-      dateFormat: "DMY",
-      decimalSeparator: "COMMA",
-      source: "INTER_CREDIT_CARD",
-    });
-    expect(rows[0]).toMatchObject({
-      kind: null,
-      amount: null,
-      errors: [
-        "Confira este valor negativo; estornos do cartão precisam de revisão antes da importação.",
-      ],
-    });
-    expect(rows[1]).toMatchObject({
-      kind: null,
-      amount: 2,
-      errors: ["Confira o tipo deste lançamento do cartão antes de importar."],
-    });
-  });
-
-  it("does not classify other statements as an Inter card export", () => {
+  it("still accepts account statements with debit and credit columns", () => {
     const parsed = parseStatementFile(
       "statement.csv",
       Buffer.from(
-        '"Data","Descrição","Categoria","Tipo","Valor"\n"14/11/2026","Compra","TRANSPORTE","Compra à vista","10.00"',
+        '"Data","Descrição","Débito","Crédito"\n"14/11/2026","Compra","10.00",""',
         "utf8",
       ),
     );
 
     expect(parsed).not.toHaveProperty("source");
+    expect(parsed.rows).toHaveLength(1);
   });
 
   it("requires valid dates and amounts and supports debit and credit columns", () => {
