@@ -1,7 +1,6 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import {
   financialEntries,
-  financialCardSettlementLinks,
   financialStatementCategoryRules,
   financialStatementImportRows,
   financialStatementImports,
@@ -88,7 +87,6 @@ export class FinancialStatementImportRepository {
       actualDate: string;
       actualAmount: number;
     }>,
-    source: "ACCOUNT" | "CARD" = "ACCOUNT",
   ) {
     if (rows.length === 0) return [];
     const userId = requireDataOwnerId();
@@ -105,9 +103,7 @@ export class FinancialStatementImportRepository {
         and(
           eq(financialEntries.userId, userId),
           inArray(financialEntries.actualDate, dates),
-          source === "CARD"
-            ? eq(financialEntries.channel, "CARD")
-            : ne(financialEntries.channel, "CARD"),
+          ne(financialEntries.channel, "CARD"),
         ),
       );
     const remaining = new Map<string, number>();
@@ -131,13 +127,10 @@ export class FinancialStatementImportRepository {
     return duplicates;
   }
 
-  async confirm(
-    input: StatementConfirmInput,
-    cardSettlementSourceRows: number[] = [],
-  ) {
+  async confirm(input: StatementConfirmInput) {
     const userId = requireDataOwnerId();
     const database = getDatabaseClient();
-    const source = input.source ?? "ACCOUNT";
+    const source = "ACCOUNT" as const;
     const coverageStart = input.coverageStart ?? null;
     const coverageEnd = input.coverageEnd ?? null;
     return database.transaction(async (transaction) => {
@@ -167,9 +160,7 @@ export class FinancialStatementImportRepository {
               and(
                 eq(financialEntries.userId, userId),
                 inArray(financialEntries.actualDate, dates),
-                source === "CARD"
-                  ? eq(financialEntries.channel, "CARD")
-                  : ne(financialEntries.channel, "CARD"),
+                ne(financialEntries.channel, "CARD"),
               ),
             )
         : [];
@@ -287,13 +278,9 @@ export class FinancialStatementImportRepository {
             description: row.description,
             categoryId,
             recurrenceId: null,
-            channel: source,
-            sourceCategory: row.sourceCategory ?? null,
-            cardSettlementStatus:
-              source === "ACCOUNT" &&
-              cardSettlementSourceRows.includes(row.sourceRow)
-                ? "AGGREGATE"
-                : null,
+            channel: "ACCOUNT",
+            sourceCategory: null,
+            cardSettlementStatus: null,
             expectedAmount: null,
             expectedDate: null,
             actualAmount: row.actualAmount.toFixed(2),

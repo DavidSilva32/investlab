@@ -34,7 +34,6 @@ type Category = {
 };
 type PreviewResponse = {
   hash: string;
-  source?: "ACCOUNT" | "CARD";
   coverageStart?: string | null;
   coverageEnd?: string | null;
   rows: Array<
@@ -87,13 +86,6 @@ function applyDateMask(value: string) {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function normalizeDescriptionForMatch(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLocaleUpperCase("pt-BR");
 }
 
 async function postPreview(file: File) {
@@ -162,18 +154,6 @@ export function FinancialStatementImportDialog({
       !row.alreadyImported,
   ).length;
   const activeCategories = categories.filter((category) => category.active);
-  const hasCardPaymentOverlap =
-    reviewRows.some((row) =>
-      /\b(?:PAGAMENTO (?:DA )?FATURA|FATURA (?:DO )?CARTAO)\b/.test(
-        normalizeDescriptionForMatch(row.description),
-      ),
-    ) &&
-    reviewRows.some((row) =>
-      /\b(?:COMPRA (?:NO|COM) CARTAO|COMPRA NO CREDITO)\b/.test(
-        normalizeDescriptionForMatch(row.description),
-      ),
-    );
-
   const reset = () => {
     requestGeneration.current += 1;
     setFile(null);
@@ -231,7 +211,6 @@ export function FinancialStatementImportDialog({
           method: "POST",
           body: JSON.stringify({
             fileHash: selectedPreview.hash,
-            source: selectedPreview.source ?? "ACCOUNT",
             coverageStart: selectedPreview.coverageStart ?? null,
             coverageEnd: selectedPreview.coverageEnd ?? null,
             rememberCategories,
@@ -240,7 +219,6 @@ export function FinancialStatementImportDialog({
               kind: row.kind,
               description: row.description.trim(),
               categoryId: row.categoryId || null,
-              sourceCategory: row.sourceCategory ?? null,
               possibleDuplicate: row.possibleDuplicate,
               actualDate: toIsoDate(row.actualDate),
               actualAmount: Number(String(row.amount).replace(",", ".")),
@@ -367,13 +345,6 @@ export function FinancialStatementImportDialog({
                   {needsCategoryCount === 1 ? "pendente" : "pendentes"}
                 </p>
               </div>
-              {preview?.source === "CARD" && (
-                <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Extrato do cartão Inter: compras à vista serão despesas na
-                  data indicada. Categorias sem correspondência ficam para
-                  classificação nesta revisão.
-                </p>
-              )}
               <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
                 <table className="w-full table-fixed text-sm">
                   <thead className="sticky top-0 bg-muted">
@@ -436,11 +407,6 @@ export function FinancialStatementImportDialog({
                               }}
                               aria-label={`Descrição da linha ${row.sourceRow}`}
                             />
-                            {row.sourceCategory && (
-                              <p className="mt-1 break-words text-xs text-muted-foreground">
-                                Categoria Inter: {row.sourceCategory}
-                              </p>
-                            )}
                           </td>
                           <td className="p-2">
                             <Select
@@ -590,11 +556,6 @@ export function FinancialStatementImportDialog({
                           }}
                           aria-label={`Descrição da linha ${row.sourceRow}`}
                         />
-                        {row.sourceCategory && (
-                          <span className="block text-xs text-muted-foreground">
-                            Categoria Inter: {row.sourceCategory}
-                          </span>
-                        )}
                       </label>
                       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                         <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
@@ -701,12 +662,6 @@ export function FinancialStatementImportDialog({
                   );
                 })}
               </div>
-              {hasCardPaymentOverlap && (
-                <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-900">
-                  O arquivo contém compras no cartão e pagamento de fatura.
-                  Revise para não contar as mesmas despesas duas vezes.
-                </p>
-              )}
               <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
                 <Checkbox
                   checked={rememberCategories}

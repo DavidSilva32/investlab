@@ -15,7 +15,7 @@ const date = z
 export const statementConfirmSchema = z
   .object({
     fileHash: hash,
-    source: z.enum(["ACCOUNT", "CARD"]).default("ACCOUNT"),
+    source: z.literal("ACCOUNT").default("ACCOUNT"),
     coverageStart: date.nullable().default(null),
     coverageEnd: date.nullable().default(null),
     rememberCategories: z.boolean().default(true),
@@ -27,7 +27,6 @@ export const statementConfirmSchema = z
             kind: z.enum(["INCOME", "EXPENSE"]),
             description: z.string().trim().min(1).max(120),
             categoryId: z.string().uuid().nullable(),
-            sourceCategory: z.string().trim().max(80).nullable().optional(),
             possibleDuplicate: z.boolean().optional(),
             actualDate: date,
             actualAmount: z
