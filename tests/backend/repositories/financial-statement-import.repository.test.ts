@@ -166,7 +166,7 @@ describe("FinancialStatementImportRepository", () => {
     expect(where).toHaveBeenCalledOnce();
   });
 
-  it("scopes duplicate matching to card or non-card sources", async () => {
+  it("ignores historical card purchases when matching an account statement", async () => {
     const where = vi.fn().mockResolvedValue([]);
     database.select.mockReturnValue({ from: () => ({ where }) });
     const row = {
@@ -176,22 +176,15 @@ describe("FinancialStatementImportRepository", () => {
       actualDate: "2026-11-14",
       actualAmount: 10,
     };
-    await runWithDataOwner("owner-card-dedupe", () =>
-      repository.findPossibleDuplicateRows([row], "CARD"),
+    await runWithDataOwner("owner-account-dedupe", () =>
+      repository.findPossibleDuplicateRows([row]),
     );
     expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toEqual(
-      expect.arrayContaining(["owner-card-dedupe", "CARD"]),
-    );
-
-    await runWithDataOwner("owner-account-dedupe", () =>
-      repository.findPossibleDuplicateRows([row], "ACCOUNT"),
-    );
-    expect(new PgDialect().sqlToQuery(where.mock.calls[1][0]).params).toEqual(
       expect.arrayContaining(["owner-account-dedupe", "CARD"]),
     );
   });
 
-  it("stores exact card coverage and leaves existing invoice statuses untouched", async () => {
+  it("stores account statement coverage and creates only account entries", async () => {
     const insertedImports: Array<Record<string, unknown>> = [];
     const insertedEntries: Array<Record<string, unknown>> = [];
     let selectIndex = 0;
@@ -236,7 +229,7 @@ describe("FinancialStatementImportRepository", () => {
       runWithDataOwner("owner-card-import", () =>
         repository.confirm({
           fileHash: "c".repeat(64),
-          source: "CARD",
+          source: "ACCOUNT",
           coverageStart: "2026-11-08",
           coverageEnd: "2026-11-14",
           rememberCategories: false,
@@ -244,11 +237,10 @@ describe("FinancialStatementImportRepository", () => {
             {
               sourceRow: 2,
               kind: "EXPENSE",
-              description: "Compra no cartão",
+              description: "Pagamento fatura Inter",
               categoryId: "123e4567-e89b-42d3-a456-426614174000",
-              sourceCategory: "COMPRAS",
               actualDate: "2026-11-14",
-              actualAmount: 25,
+              actualAmount: 100,
             },
           ],
         }),
@@ -260,13 +252,13 @@ describe("FinancialStatementImportRepository", () => {
     });
 
     expect(insertedImports[0]).toMatchObject({
-      source: "CARD",
+      source: "ACCOUNT",
       coverageStart: "2026-11-08",
       coverageEnd: "2026-11-14",
     });
     expect(insertedEntries[0]).toMatchObject({
-      channel: "CARD",
-      sourceCategory: "COMPRAS",
+      channel: "ACCOUNT",
+      sourceCategory: null,
       cardSettlementStatus: null,
       actualDate: "2026-11-14",
     });
@@ -278,7 +270,7 @@ describe("FinancialStatementImportRepository", () => {
     );
   });
 
-  it("imports account invoice rows as aggregate expenses eligible for review", async () => {
+  it("imports an account invoice as one ordinary expense", async () => {
     const insertedEntries: Array<Record<string, unknown>> = [];
     let selectIndex = 0;
     const select = vi.fn(() => {
@@ -314,28 +306,25 @@ describe("FinancialStatementImportRepository", () => {
 
     await expect(
       runWithDataOwner("owner-account-invoice", () =>
-        repository.confirm(
-          {
-            fileHash: "e".repeat(64),
-            rememberCategories: false,
-            rows: [
-              {
-                sourceRow: 8,
-                kind: "EXPENSE",
-                description: "Pagamento fatura cartão",
-                categoryId: "123e4567-e89b-42d3-a456-426614174000",
-                actualDate: "2026-11-20",
-                actualAmount: 100,
-              },
-            ],
-          },
-          [8],
-        ),
+        repository.confirm({
+          fileHash: "e".repeat(64),
+          rememberCategories: false,
+          rows: [
+            {
+              sourceRow: 8,
+              kind: "EXPENSE",
+              description: "Pagamento fatura cartão",
+              categoryId: "123e4567-e89b-42d3-a456-426614174000",
+              actualDate: "2026-11-20",
+              actualAmount: 100,
+            },
+          ],
+        }),
       ),
     ).resolves.toMatchObject({ importedCount: 1, duplicateCount: 0 });
     expect(insertedEntries[0]).toMatchObject({
       channel: "ACCOUNT",
-      cardSettlementStatus: "AGGREGATE",
+      cardSettlementStatus: null,
       kind: "EXPENSE",
       actualAmount: "100.00",
     });

@@ -13,10 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 const state = vi.hoisted(() => ({ supportView: false, searchParams: "" }));
 vi.mock("@/lib/api-client", () => ({
-  apiRequest: (url: string, ...args: unknown[]) =>
-    url.startsWith("/api/financial-card-settlements")
-      ? Promise.resolve({ settlements: [], cardEntries: [] })
-      : api.request(url, ...args),
+  apiRequest: (url: string, ...args: unknown[]) => api.request(url, ...args),
 }));
 vi.mock("@/components/app-shell", () => ({
   useAdminSupportView: () => state.supportView,
@@ -72,8 +69,6 @@ beforeEach(() => {
   api.request.mockImplementation((url: string) => {
     if (url.startsWith("/api/finance-overview"))
       return Promise.resolve(overview);
-    if (url.startsWith("/api/financial-card-settlements"))
-      return Promise.resolve({ settlements: [], cardEntries: [] });
     if (url.startsWith("/api/financial-recurrences"))
       return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
     return Promise.resolve({});
@@ -88,55 +83,21 @@ afterEach(() => {
 });
 
 describe("FinancialOverview", () => {
-  it("shows the latest observed coverage period per imported source", async () => {
-    const statementCoverage = [
-      {
-        source: "CARD" as const,
-        coverageStart: null,
-        coverageEnd: null,
-        importedAt: "2026-11-17T12:00:00.000Z",
-      },
-      {
-        source: "CARD" as const,
-        coverageStart: "2026-11-10",
-        coverageEnd: "2026-11-10",
-        importedAt: "2026-11-15T12:00:00.000Z",
-      },
-      {
-        source: "CARD" as const,
-        coverageStart: "2026-11-12",
-        coverageEnd: "2026-11-12",
-        importedAt: "2026-11-14T12:00:00.000Z",
-      },
-      {
-        source: "ACCOUNT" as const,
-        coverageStart: "2026-11-01",
-        coverageEnd: "2026-11-30",
-        importedAt: "2026-11-16T12:00:00.000Z",
-      },
-    ];
-    const overviewWithCoverage = {
-      ...overview,
-      summary: { ...overview.summary, accountCashBalance: "-25.00" },
-      statementCoverage,
-    };
-    api.request.mockImplementation((url: string) => {
-      if (url.startsWith("/api/finance-overview"))
-        return Promise.resolve(overviewWithCoverage);
-      if (url.startsWith("/api/financial-recurrences"))
-        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
-      return Promise.resolve({});
-    });
+  it("shows a concise six-value summary without card reconciliation", async () => {
     renderFinance();
 
-    expect(
-      (await screen.findByText(/Datas observadas nos arquivos mais recentes:/))
-        .textContent,
-    ).toContain("Cartão: 10/11/2026 · Conta: 01/11/2026 a 30/11/2026");
-    const accountFlow = screen.getByText("Fluxo líquido das contas");
-    expect(accountFlow.parentElement?.parentElement?.className).toContain(
-      "border-l-status-danger",
-    );
+    for (const label of [
+      "Entradas previstas",
+      "Entradas realizadas",
+      "Saídas previstas",
+      "Saídas realizadas",
+      "Saldo previsto",
+      "Resultado líquido do mês",
+    ]) {
+      expect(await screen.findByText(label)).toBeTruthy();
+    }
+    expect(screen.queryByText("Compras no cartão")).toBeNull();
+    expect(screen.queryByText("Conferir pagamentos de cartão")).toBeNull();
   });
 
   it("shows missing recorded values as unavailable instead of zero", async () => {

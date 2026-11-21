@@ -132,78 +132,18 @@ describe("FinancialEntriesTable", () => {
     expect(screen.getByText("Aluguel")).toBeTruthy();
   });
 
-  it("sorts and labels imported entry channels with legacy rows defaulting to manual", async () => {
-    const user = userEvent.setup();
+  it("shows an account invoice as an ordinary financial entry", () => {
     render(
       <FinancialEntriesTable
-        entries={[
-          { ...entry, id: "manual-entry", description: "Manual" },
-          {
-            ...entry,
-            id: "card-entry",
-            description: "Compra cartão",
-            channel: "CARD" as const,
-          },
-          {
-            ...entry,
-            id: "account-entry",
-            description: "Movimento conta",
-            channel: "ACCOUNT" as const,
-          },
-        ]}
+        entries={[{ ...entry, description: "Pagamento fatura Inter" }]}
         readOnly
         onEdit={() => {}}
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Canal" }));
-
-    const rows = screen.getAllByRole("row").slice(1);
-    expect(rows[0].textContent).toContain("Movimento conta");
-    expect(rows[0].textContent).toContain("Conta");
-    expect(rows[1].textContent).toContain("Compra cartão");
-    expect(rows[1].textContent).toContain("Cartão");
-    expect(rows[2].textContent).toContain("Manual");
-  });
-
-  it("shows imported card category and each supported invoice reconciliation status", () => {
-    render(
-      <FinancialEntriesTable
-        entries={[
-          {
-            ...entry,
-            id: "linked-invoice",
-            description: "Fatura vinculada",
-            channel: "ACCOUNT",
-            cardSettlementStatus: "LINKED",
-          },
-          {
-            ...entry,
-            id: "unrelated-invoice",
-            description: "Fatura sem vínculo",
-            channel: "ACCOUNT",
-            cardSettlementStatus: "NOT_RELATED",
-          },
-          {
-            ...entry,
-            id: "aggregate-invoice",
-            description: "Fatura agregada",
-            channel: "CARD",
-            sourceCategory: "COMPRAS",
-            cardSettlementStatus: "AGGREGATE",
-          },
-        ]}
-        readOnly
-        onEdit={() => {}}
-      />,
-    );
-
-    expect(screen.getByText("Categoria Inter: COMPRAS")).toBeTruthy();
-    expect(screen.getByText("Fatura vinculada às compras")).toBeTruthy();
-    expect(
-      screen.getByText("Fatura sem vínculo · gasto agregado"),
-    ).toBeTruthy();
-    expect(screen.getByText("Fatura · gasto agregado")).toBeTruthy();
+    expect(screen.getByText("Pagamento fatura Inter")).toBeTruthy();
+    expect(screen.queryByText(/fatura vinculada às compras/i)).toBeNull();
+    expect(screen.queryByText("Canal")).toBeNull();
   });
 
   it("shows a launch linked to a recurrence as recurring and keeps launch actions", async () => {
@@ -455,7 +395,7 @@ describe("FinancialEntriesTable", () => {
       screen.getByRole("button", { name: "Adicionar critério" }),
     );
     await user.click(screen.getByRole("combobox", { name: "Coluna 2" }));
-    await user.click(await screen.findByRole("option", { name: "Registro" }));
+    await user.click(await screen.findByRole("option", { name: "Origem" }));
     await user.click(screen.getByRole("combobox", { name: "Valor 2" }));
     expect(await screen.findByRole("option", { name: "Avulso" })).toBeTruthy();
     await user.click(screen.getByRole("option", { name: "Avulso" }));

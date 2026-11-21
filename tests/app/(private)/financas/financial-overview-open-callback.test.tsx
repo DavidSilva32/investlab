@@ -12,10 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({
-  apiRequest: (url: string, ...args: unknown[]) =>
-    url.startsWith("/api/financial-card-settlements")
-      ? Promise.resolve({ settlements: [], cardEntries: [] })
-      : api.request(url, ...args),
+  apiRequest: (url: string, ...args: unknown[]) => api.request(url, ...args),
 }));
 vi.mock("@/components/app-shell", () => ({ useAdminSupportView: () => false }));
 vi.mock("next/navigation", () => ({
@@ -123,8 +120,6 @@ beforeEach(() => {
   api.request.mockImplementation((url: string) => {
     if (url.startsWith("/api/finance-overview"))
       return Promise.resolve(overview);
-    if (url.startsWith("/api/financial-card-settlements"))
-      return Promise.resolve({ settlements: [], cardEntries: [] });
     return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
   });
 });
@@ -192,8 +187,6 @@ describe("FinancialOverview controlled entry dialog callback", () => {
     let overviewReads = 0;
     api.request.mockImplementation((url: string) => {
       if (url.startsWith("/api/finance-overview")) overviewReads += 1;
-      if (url.startsWith("/api/financial-card-settlements"))
-        return Promise.resolve({ settlements: [], cardEntries: [] });
       return Promise.resolve(
         url.startsWith("/api/finance-overview")
           ? overview

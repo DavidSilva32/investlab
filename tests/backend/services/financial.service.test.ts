@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const repositories = vi.hoisted(() => ({
   listCategories: vi.fn(),
   listEntries: vi.fn(),
-  listStatementCoverage: vi.fn(),
   findCategory: vi.fn(),
   findEntry: vi.fn(),
   createEntry: vi.fn(),
@@ -21,7 +20,6 @@ vi.mock("@/backend/repositories/financial.repository", () => ({
   financialRepository: {
     listCategories: repositories.listCategories,
     listEntries: repositories.listEntries,
-    listStatementCoverage: repositories.listStatementCoverage,
     findCategory: repositories.findCategory,
     findEntry: repositories.findEntry,
     createEntry: repositories.createEntry,
@@ -183,7 +181,6 @@ describe("FinancialService", () => {
       defaultExpenseCategory,
       ownedCategory,
     ]);
-    repositories.listStatementCoverage.mockResolvedValue([]);
     repositories.listEntries.mockResolvedValue([]);
     repositories.findCategory.mockImplementation(
       async (id) =>
@@ -716,9 +713,6 @@ describe("FinancialService", () => {
       realizedIncome: "2900.00",
       expectedExpenses: "790.00",
       realizedExpenses: "655.00",
-      realizedCardSpending: null,
-      accountCashOutflow: null,
-      accountCashBalance: null,
       expectedBalance: "2210.00",
       recordedBalance: "2245.00",
       undatedRecurringRealizations: 0,
@@ -781,143 +775,7 @@ describe("FinancialService", () => {
     });
   });
 
-  it("counts an account-only card bill as spending and account cash outflow", async () => {
-    repositories.listEntries.mockResolvedValue([
-      entry({
-        id: "account-income",
-        kind: "INCOME",
-        channel: "ACCOUNT",
-        actualAmount: "1000.00",
-      }),
-      entry({
-        id: "account-invoice",
-        channel: "ACCOUNT",
-        description: "Pagamento fatura",
-        categoryName: "Fatura do cartão",
-        actualAmount: "100.00",
-        cardSettlementStatus: "AGGREGATE",
-      }),
-    ]);
-
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedExpenses: "100.00",
-        realizedCardSpending: null,
-        accountCashOutflow: "100.00",
-        accountCashBalance: "900.00",
-        recordedBalance: "900.00",
-      },
-    });
-  });
-
-  it("counts card purchases as spending without changing account cash", async () => {
-    repositories.listEntries.mockResolvedValue([
-      entry({
-        id: "card-purchase",
-        channel: "CARD",
-        actualAmount: "125.00",
-      }),
-    ]);
-
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedExpenses: "125.00",
-        realizedCardSpending: "125.00",
-        accountCashOutflow: null,
-        accountCashBalance: null,
-      },
-    });
-  });
-
-  it("keeps an unconfirmed invoice visible in spending alongside card purchases", async () => {
-    repositories.listEntries.mockResolvedValue([
-      entry({
-        id: "account-income",
-        kind: "INCOME",
-        channel: "ACCOUNT",
-        actualAmount: "1000.00",
-      }),
-      entry({
-        id: "account-invoice",
-        channel: "ACCOUNT",
-        actualAmount: "100.00",
-        cardSettlementStatus: "AGGREGATE",
-      }),
-      entry({
-        id: "card-purchase",
-        channel: "CARD",
-        actualAmount: "100.00",
-      }),
-    ]);
-
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedExpenses: "200.00",
-        realizedCardSpending: "100.00",
-        accountCashOutflow: "100.00",
-        accountCashBalance: "900.00",
-        recordedBalance: "800.00",
-      },
-    });
-  });
-
-  it("removes only a confirmed linked invoice from spending, not account cash", async () => {
-    repositories.listEntries.mockResolvedValue([
-      entry({
-        id: "account-income",
-        kind: "INCOME",
-        channel: "ACCOUNT",
-        actualAmount: "1000.00",
-      }),
-      entry({
-        id: "account-invoice",
-        channel: "ACCOUNT",
-        actualAmount: "100.00",
-        cardSettlementStatus: "LINKED",
-      }),
-      entry({
-        id: "card-purchase",
-        channel: "CARD",
-        actualAmount: "100.00",
-      }),
-    ]);
-
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedExpenses: "100.00",
-        realizedCardSpending: "100.00",
-        accountCashOutflow: "100.00",
-        accountCashBalance: "900.00",
-        recordedBalance: "900.00",
-      },
-    });
-  });
-
-  it("keeps a confirmed nonmatching invoice as aggregated spending", async () => {
-    repositories.listEntries.mockResolvedValue([
-      entry({
-        id: "account-invoice",
-        channel: "ACCOUNT",
-        actualAmount: "100.00",
-        cardSettlementStatus: "NOT_RELATED",
-      }),
-      entry({
-        id: "card-purchase",
-        channel: "CARD",
-        actualAmount: "60.00",
-      }),
-    ]);
-
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedExpenses: "160.00",
-        realizedCardSpending: "60.00",
-        accountCashOutflow: "100.00",
-      },
-    });
-  });
-
-  it("keeps a negative account flow independent from card spending and manual entries", async () => {
+  it("excludes all historical card rows but counts account invoice and manual expenses once", async () => {
     repositories.listEntries.mockResolvedValue([
       entry({
         id: "account-income",
@@ -926,14 +784,12 @@ describe("FinancialService", () => {
         actualAmount: "50.00",
       }),
       entry({
-        id: "account-expense",
+        id: "account-invoice",
         channel: "ACCOUNT",
+        description: "Pagamento fatura Inter",
+        categoryName: "Fatura do cartão",
         actualAmount: "100.00",
-      }),
-      entry({
-        id: "card-purchase",
-        channel: "CARD",
-        actualAmount: "200.00",
+        cardSettlementStatus: "LINKED",
       }),
       entry({
         id: "manual-income",
@@ -941,18 +797,34 @@ describe("FinancialService", () => {
         channel: "MANUAL",
         actualAmount: "500.00",
       }),
+      entry({
+        id: "manual-expense",
+        channel: "MANUAL",
+        actualAmount: "25.00",
+      }),
+      ...([null, "LINKED", "AGGREGATE", "NOT_RELATED"] as const).map(
+        (cardSettlementStatus, index) =>
+          entry({
+            id: `historical-card-${index}`,
+            channel: "CARD",
+            actualAmount: "100.00",
+            cardSettlementStatus,
+          }),
+      ),
     ]);
 
-    await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
-      summary: {
-        realizedIncome: "550.00",
-        realizedExpenses: "300.00",
-        realizedCardSpending: "200.00",
-        accountCashOutflow: "100.00",
-        accountCashBalance: "-50.00",
-        recordedBalance: "250.00",
-      },
+    const result = await service.getMonthlyOverview("2026-10");
+    expect(result.summary).toMatchObject({
+      realizedIncome: "550.00",
+      realizedExpenses: "125.00",
+      recordedBalance: "425.00",
     });
+    expect(result.entries.map(({ id }) => id)).toEqual([
+      "account-income",
+      "account-invoice",
+      "manual-income",
+      "manual-expense",
+    ]);
   });
 
   it("simulates income and expense changes with exact cents without saving data", async () => {

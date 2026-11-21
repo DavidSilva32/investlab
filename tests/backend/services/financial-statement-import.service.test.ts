@@ -136,344 +136,6 @@ describe("FinancialStatementImportService", () => {
     });
   });
 
-  it("preserves the Inter source category and suggests only direct safe mappings", async () => {
-    parseStatementFile.mockReturnValue({
-      hash: "b".repeat(64),
-      source: "INTER_CREDIT_CARD",
-      headers: ["Data", "Lançamento", "Categoria", "Tipo", "Valor"],
-      rows: [
-        {
-          sourceRow: 2,
-          values: [
-            "14/11/2026",
-            "DL *UberRides",
-            "TRANSPORTE",
-            "Compra à vista",
-            "14,96",
-          ],
-        },
-        {
-          sourceRow: 3,
-          values: ["13/11/2026", "Loja", "COMPRAS", "Compra à vista", "30,00"],
-        },
-        {
-          sourceRow: 4,
-          values: [
-            "10/11/2026",
-            "PAGAMENTO ON LINE",
-            "OUTROS",
-            "Compra à vista",
-            "819,07",
-          ],
-        },
-      ],
-    });
-    parseStatementRows.mockReturnValue([
-      {
-        sourceRow: 2,
-        kind: "EXPENSE",
-        description: "DL *UberRides",
-        actualDate: "2026-11-14",
-        amount: 14.96,
-        sourceCategory: "TRANSPORTE",
-        errors: [],
-      },
-      {
-        sourceRow: 3,
-        kind: "EXPENSE",
-        description: "Loja",
-        actualDate: "2026-11-13",
-        amount: 30,
-        sourceCategory: "COMPRAS",
-        errors: [],
-      },
-      {
-        sourceRow: 4,
-        kind: "EXPENSE",
-        description: "PAGAMENTO ON LINE",
-        actualDate: "2026-11-10",
-        amount: 819.07,
-        sourceCategory: "OUTROS",
-        errors: [],
-      },
-    ]);
-
-    const result = await financialStatementImportService.preview({
-      name: "cartao-inter.csv",
-      buffer: Buffer.from("inter"),
-    });
-
-    expect(result.source).toBe("CARD");
-    expect(result).toMatchObject({
-      coverageStart: "2026-11-10",
-      coverageEnd: "2026-11-14",
-    });
-    expect(parseStatementRows).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({
-        source: "INTER_CREDIT_CARD",
-        dateColumn: 0,
-        descriptionColumn: 1,
-        sourceCategoryColumn: 2,
-        transactionTypeColumn: 3,
-        amountColumn: 4,
-        decimalSeparator: "COMMA",
-      }),
-    );
-    expect(result.rows).toMatchObject([
-      {
-        sourceCategory: "TRANSPORTE",
-        categorySource: "suggested",
-      },
-      {
-        sourceCategory: "COMPRAS",
-        categoryId: null,
-        categorySource: null,
-      },
-      {
-        sourceCategory: "OUTROS",
-        kind: "EXPENSE",
-        categoryId: null,
-        categorySource: null,
-      },
-    ]);
-  });
-
-  it("maps only the supported Inter categories to their everyday category", async () => {
-    parseStatementFile.mockReturnValue({
-      hash: "d".repeat(64),
-      source: "INTER_CREDIT_CARD",
-      headers: ["Data", "Lançamento", "Categoria", "Tipo", "Valor"],
-      rows: [
-        {
-          sourceRow: 2,
-          values: [
-            "14/11/2026",
-            "Restaurante",
-            "RESTAURANTES",
-            "Compra à vista",
-            "10,00",
-          ],
-        },
-        {
-          sourceRow: 3,
-          values: [
-            "14/11/2026",
-            "Mercado",
-            "SUPERMERCADO",
-            "Compra à vista",
-            "20,00",
-          ],
-        },
-        {
-          sourceRow: 4,
-          values: ["14/11/2026", "Loja", "COMPRAS", "Compra à vista", "30,00"],
-        },
-      ],
-    });
-    parseStatementRows.mockReturnValue([
-      {
-        sourceRow: 2,
-        kind: "EXPENSE",
-        description: "Restaurante",
-        actualDate: "2026-11-14",
-        amount: 10,
-        sourceCategory: "RESTAURANTES",
-        errors: [],
-      },
-      {
-        sourceRow: 3,
-        kind: "EXPENSE",
-        description: "Mercado",
-        actualDate: "2026-11-14",
-        amount: 20,
-        sourceCategory: "SUPERMERCADO",
-        errors: [],
-      },
-      {
-        sourceRow: 4,
-        kind: "EXPENSE",
-        description: "Loja",
-        actualDate: "2026-11-14",
-        amount: 30,
-        sourceCategory: "COMPRAS",
-        errors: [],
-      },
-    ]);
-
-    const result = await financialStatementImportService.preview({
-      name: "cartao-inter.csv",
-      buffer: Buffer.from("inter-categories"),
-    });
-
-    expect(result.rows).toMatchObject([
-      {
-        sourceCategory: "RESTAURANTES",
-        categoryId: "123e4567-e89b-42d3-a456-426614174000",
-        categorySource: "suggested",
-      },
-      {
-        sourceCategory: "SUPERMERCADO",
-        categoryId: "123e4567-e89b-42d3-a456-426614174000",
-        categorySource: "suggested",
-      },
-      { sourceCategory: "COMPRAS", categoryId: null, categorySource: null },
-    ]);
-  });
-
-  it("suggests health for drugstore purchases and leaves missing categories unmapped", async () => {
-    parseStatementFile.mockReturnValue({
-      hash: "c".repeat(64),
-      source: "INTER_CREDIT_CARD",
-      headers: ["Data", "Lançamento", "Categoria", "Tipo", "Valor"],
-      rows: [
-        {
-          sourceRow: 2,
-          values: [
-            "14/11/2026",
-            "Farmácia",
-            "DROGARIA",
-            "Compra à vista",
-            "30,00",
-          ],
-        },
-        {
-          sourceRow: 3,
-          values: [
-            "14/11/2026",
-            "Compra sem categoria",
-            "",
-            "Compra à vista",
-            "50,00",
-          ],
-        },
-      ],
-    });
-    parseStatementRows.mockReturnValue([
-      {
-        sourceRow: 2,
-        kind: "EXPENSE",
-        description: "Farmácia",
-        actualDate: "2026-11-14",
-        amount: 30,
-        sourceCategory: "DROGARIA",
-        errors: [],
-      },
-      {
-        sourceRow: 3,
-        kind: "EXPENSE",
-        description: "Compra sem categoria",
-        actualDate: "2026-11-14",
-        amount: 50,
-        sourceCategory: null,
-        errors: [],
-      },
-    ]);
-
-    const result = await financialStatementImportService.preview({
-      name: "cartao-inter.csv",
-      buffer: Buffer.from("inter-health-and-empty-category"),
-    });
-
-    expect(result.rows).toMatchObject([
-      {
-        sourceCategory: "DROGARIA",
-        categoryId: "523e4567-e89b-42d3-a456-000000000002",
-        categorySource: "suggested",
-      },
-      { sourceCategory: null, categoryId: null, categorySource: null },
-    ]);
-  });
-
-  it("maps a recognized Inter statement by header when optional columns are present", async () => {
-    parseStatementFile.mockReturnValue({
-      hash: "9".repeat(64),
-      source: "INTER_CREDIT_CARD",
-      headers: [
-        "Observação",
-        "Valor",
-        "Tipo",
-        "Categoria",
-        "Lançamento",
-        "Data",
-      ],
-      rows: [
-        {
-          sourceRow: 2,
-          values: [
-            "extra",
-            "10,00",
-            "Compra à vista",
-            "COMPRAS",
-            "Loja",
-            "14/11/2026",
-          ],
-        },
-      ],
-    });
-    parseStatementRows.mockReturnValue([
-      {
-        sourceRow: 2,
-        kind: "EXPENSE",
-        description: "Loja",
-        actualDate: "2026-11-14",
-        amount: 10,
-        sourceCategory: "COMPRAS",
-        errors: [],
-      },
-    ]);
-
-    const result = await financialStatementImportService.preview({
-      name: "cartao-inter.csv",
-      buffer: Buffer.from("inter"),
-    });
-
-    expect(result.source).toBe("CARD");
-    expect(parseStatementRows).toHaveBeenCalledWith(
-      expect.any(Array),
-      expect.objectContaining({
-        dateColumn: 5,
-        amountColumn: 1,
-        transactionTypeColumn: 2,
-        sourceCategoryColumn: 3,
-        descriptionColumn: 4,
-        source: "INTER_CREDIT_CARD",
-      }),
-    );
-  });
-
-  it("rejects a duplicate required Inter header instead of treating it as an account statement", async () => {
-    parseStatementFile.mockReturnValue({
-      hash: "e".repeat(64),
-      source: "INTER_CREDIT_CARD",
-      headers: ["Data", "Lançamento", "Categoria", "Tipo", "Valor", "Data"],
-      rows: [
-        {
-          sourceRow: 2,
-          values: [
-            "14/11/2026",
-            "Loja",
-            "COMPRAS",
-            "Compra à vista",
-            "10,00",
-            "14/11/2026",
-          ],
-        },
-      ],
-    });
-
-    await expect(
-      financialStatementImportService.preview({
-        name: "cartao-inter.csv",
-        buffer: Buffer.from("duplicate-header"),
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      message: "Não foi possível reconhecer o extrato do cartão Inter.",
-    });
-    expect(parseStatementRows).not.toHaveBeenCalled();
-  });
-
   it("detects columns from the row data when header names are unknown", async () => {
     parseStatementFile.mockReturnValue({
       hash: "a".repeat(64),
@@ -1042,7 +704,7 @@ describe("FinancialStatementImportService", () => {
     });
 
     expect(listSavedCategoryRules).toHaveBeenCalledWith([]);
-    expect(findPossibleDuplicateRows).toHaveBeenCalledWith([], "ACCOUNT");
+    expect(findPossibleDuplicateRows).toHaveBeenCalledWith([]);
     expect(result.rows[0]).toMatchObject({
       alreadyImported: true,
       possibleDuplicate: false,
@@ -1273,7 +935,7 @@ describe("FinancialStatementImportService", () => {
     });
   });
 
-  it("marks account card-payment rows for explicit reconciliation", async () => {
+  it("imports an account invoice payment as a regular account expense", async () => {
     await financialStatementImportService.confirm({
       fileHash: "f".repeat(64),
       rows: [
@@ -1297,32 +959,31 @@ describe("FinancialStatementImportService", () => {
     });
 
     expect(confirmRows).toHaveBeenCalledWith(
-      expect.objectContaining({ rows: expect.any(Array) }),
-      [8, 9],
+      expect.objectContaining({
+        source: "ACCOUNT",
+        rows: expect.any(Array),
+      }),
     );
   });
 
-  it("does not classify card purchases as account invoice payments", async () => {
-    await financialStatementImportService.confirm({
-      fileHash: "c".repeat(64),
-      source: "CARD",
-      rows: [
-        {
-          sourceRow: 2,
-          kind: "EXPENSE",
-          description: "Compra no cartão",
-          categoryId: "123e4567-e89b-42d3-a456-426614174000",
-          sourceCategory: "COMPRAS",
-          actualDate: "2026-11-14",
-          actualAmount: 25,
-        },
-      ],
-    });
-
-    expect(confirmRows).toHaveBeenLastCalledWith(
-      expect.objectContaining({ source: "CARD" }),
-      [],
-    );
+  it("rejects CARD as a statement source", async () => {
+    await expect(
+      financialStatementImportService.confirm({
+        fileHash: "c".repeat(64),
+        source: "CARD",
+        rows: [
+          {
+            sourceRow: 2,
+            kind: "EXPENSE",
+            description: "Compra no cartão",
+            categoryId: "123e4567-e89b-42d3-a456-426614174000",
+            actualDate: "2026-11-14",
+            actualAmount: 25,
+          },
+        ],
+      }),
+    ).rejects.toThrow("Revise os lançamentos antes de confirmar.");
+    expect(confirmRows).not.toHaveBeenCalled();
   });
 
   it("confirms overlapping rows without requiring duplicate acknowledgement", async () => {
@@ -1355,7 +1016,6 @@ describe("FinancialStatementImportService", () => {
     expect(confirmRows).toHaveBeenCalledOnce();
     expect(confirmRows).toHaveBeenLastCalledWith(
       expect.objectContaining({ rememberCategories: true }),
-      [],
     );
   });
 
@@ -1401,7 +1061,6 @@ describe("FinancialStatementImportService", () => {
     });
     expect(confirmRows).toHaveBeenCalledWith(
       expect.objectContaining({ rememberCategories: false }),
-      [],
     );
   });
 
