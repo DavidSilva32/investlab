@@ -8,6 +8,7 @@ export type StatementRawRow = {
   sourceRow: number;
   values: StatementRawValue[];
 };
+export type FinancialStatementSource = "GENERIC" | "INTER_CREDIT_CARD";
 export type StatementColumnMapping = {
   dateColumn: number;
   descriptionColumn: number;
@@ -16,6 +17,9 @@ export type StatementColumnMapping = {
   creditColumn?: number;
   dateFormat: "DMY" | "MDY" | "ISO";
   decimalSeparator: "COMMA" | "DOT";
+  source?: FinancialStatementSource;
+  sourceCategoryColumn?: number;
+  transactionTypeColumn?: number;
 };
 
 export type ParsedStatementRow = {
@@ -25,7 +29,28 @@ export type ParsedStatementRow = {
   actualDate: string | null;
   amount: number | null;
   errors: string[];
+  sourceCategory?: string | null;
 };
+
+function normalizeHeader(value: unknown) {
+  /* v8 ignore next -- worksheet column headers are normalized to strings before this helper. */
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+}
+
+function detectInterCreditCardSource(
+  headers: string[],
+): FinancialStatementSource | undefined {
+  const expected = ["data", "lancamento", "categoria", "tipo", "valor"];
+  const normalized = headers.map(normalizeHeader);
+  if (expected.some((header) => !normalized.includes(header))) {
+    return undefined;
+  }
+  return "INTER_CREDIT_CARD";
+}
 
 const MAX_STATEMENT_ROWS = 500;
 const MAX_HEADER_SEARCH_ROWS = 20;
@@ -192,7 +217,12 @@ function headerIndex(rows: StatementRawValue[][]) {
 export function parseStatementFile(
   fileName: string,
   buffer: Buffer,
-): { hash: string; headers: string[]; rows: StatementRawRow[] } {
+): {
+  hash: string;
+  headers: string[];
+  rows: StatementRawRow[];
+  source?: FinancialStatementSource;
+} {
   if (!/\.(csv|xls|xlsx)$/i.test(fileName)) {
     throw new ApplicationError("Use um arquivo CSV, XLS ou XLSX.", 400);
   }
@@ -287,10 +317,12 @@ export function parseStatementFile(
       : [],
   );
 
+  const source = detectInterCreditCardSource(headers);
   return {
     hash: createHash("sha256").update(buffer).digest("hex"),
     headers,
     rows: rawRows,
+    ...(source ? { source } : {}),
   };
 }
 
@@ -353,9 +385,12 @@ function parseAmount(
     .trim()
     .replace(/[\s\u00a0]/g, "");
   if (!text) return 0;
-  text = text.replace(/^(R\$|BRL)/i, "").replace(/(R\$|BRL)$/i, "");
   const negative = /^\(.*\)$/.test(text) || text.startsWith("-");
-  text = text.replace(/[()]/g, "").replace(/^[+-]/, "");
+  text = text
+    .replace(/[()]/g, "")
+    .replace(/^[+-]/, "")
+    .replace(/^(R\$|BRL)/i, "")
+    .replace(/(R\$|BRL)$/i, "");
   const decimal = decimalSeparator === "COMMA" ? "," : ".";
   const thousands = decimalSeparator === "COMMA" ? "." : ",";
   if ((text.match(new RegExp(`\\${decimal}`, "g")) ?? []).length > 1)
@@ -365,7 +400,11 @@ function parseAmount(
     return null;
   const normalized = `${whole.replace(new RegExp(`\\${thousands}`, "g"), "")}${fraction ? `.${fraction}` : ""}`;
   const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 999_999_999_999.99)
+  if (
+    !Number.isFinite(parsed) ||
+    parsed === 0 ||
+    Math.abs(parsed) > 999_999_999_999.99
+  )
     return null;
   return negative ? -parsed : parsed;
 }
@@ -386,6 +425,18 @@ export function parseStatementRows(
     if (description.length > 120)
       errors.push("A descrição deve ter até 120 caracteres.");
     if (!actualDate) errors.push("Confira a data e o formato selecionado.");
+
+    const sourceCategory =
+      mapping.sourceCategoryColumn === undefined
+        ? undefined
+        : String(cell(row, mapping.sourceCategoryColumn)).trim() || null;
+    const transactionType =
+      mapping.transactionTypeColumn === undefined
+        ? undefined
+        : normalizeHeader(cell(row, mapping.transactionTypeColumn)).replace(
+            /\s+/g,
+            " ",
+          );
 
     let amount: number | null = null;
     let kind: ParsedStatementRow["kind"] = null;
@@ -421,6 +472,26 @@ export function parseStatementRows(
       } else
         errors.push("A linha precisa ter um débito ou crédito maior que zero.");
     }
+    if (mapping.source === "INTER_CREDIT_CARD") {
+      const signed = parseAmount(
+        cell(row, mapping.amountColumn!),
+        mapping.decimalSeparator,
+      );
+      if (signed !== null && signed < 0) {
+        kind = null;
+        amount = null;
+        errors.push(
+          "Confira este valor negativo; estornos do cartão precisam de revisão antes da importação.",
+        );
+      } else if (transactionType !== "compra a vista") {
+        kind = null;
+        errors.push(
+          "Confira o tipo deste lançamento do cartão antes de importar.",
+        );
+      } else if (amount !== null && amount > 0) {
+        kind = "EXPENSE";
+      }
+    }
     return {
       sourceRow: row.sourceRow,
       kind,
@@ -428,6 +499,7 @@ export function parseStatementRows(
       actualDate,
       amount,
       errors,
+      ...(mapping.source === "INTER_CREDIT_CARD" ? { sourceCategory } : {}),
     };
   });
 }

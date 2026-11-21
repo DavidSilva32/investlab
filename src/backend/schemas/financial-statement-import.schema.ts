@@ -15,6 +15,9 @@ const date = z
 export const statementConfirmSchema = z
   .object({
     fileHash: hash,
+    source: z.enum(["ACCOUNT", "CARD"]).default("ACCOUNT"),
+    coverageStart: date.nullable().default(null),
+    coverageEnd: date.nullable().default(null),
     rememberCategories: z.boolean().default(true),
     rows: z
       .array(
@@ -24,6 +27,7 @@ export const statementConfirmSchema = z
             kind: z.enum(["INCOME", "EXPENSE"]),
             description: z.string().trim().min(1).max(120),
             categoryId: z.string().uuid().nullable(),
+            sourceCategory: z.string().trim().max(80).nullable().optional(),
             possibleDuplicate: z.boolean().optional(),
             actualDate: date,
             actualAmount: z
@@ -40,6 +44,17 @@ export const statementConfirmSchema = z
   .strict()
   .superRefine((input, context) => {
     if (
+      (input.coverageStart === null) !== (input.coverageEnd === null) ||
+      (input.coverageStart !== null &&
+        input.coverageEnd !== null &&
+        input.coverageStart > input.coverageEnd)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Confira o período coberto pelo extrato.",
+      });
+    }
+    if (
       new Set(input.rows.map((row) => row.sourceRow)).size !== input.rows.length
     ) {
       context.addIssue({
@@ -49,4 +64,7 @@ export const statementConfirmSchema = z
     }
   });
 
-export type StatementConfirmInput = z.infer<typeof statementConfirmSchema>;
+export type StatementConfirmInput = z.input<typeof statementConfirmSchema>;
+export type ParsedStatementConfirmInput = z.output<
+  typeof statementConfirmSchema
+>;

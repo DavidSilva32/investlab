@@ -72,6 +72,9 @@ export type FinancialEntryRow = {
   categoryId: string;
   categoryName: string;
   recurrenceId?: string | null;
+  channel?: "MANUAL" | "ACCOUNT" | "CARD";
+  sourceCategory?: string | null;
+  cardSettlementStatus?: "AGGREGATE" | "LINKED" | "NOT_RELATED" | null;
   expectedAmount: string | null;
   expectedDate: string | null;
   actualAmount: string | null;
@@ -352,7 +355,23 @@ export function FinancialEntriesTable({
       width: "minmax(180px, 1fr)",
       value: (row) => row.description,
       render: (row) => (
-        <span className="block truncate font-medium">{row.description}</span>
+        <span className="block min-w-0">
+          <span className="block truncate font-medium">{row.description}</span>
+          {row.entry.sourceCategory && (
+            <span className="block text-xs text-muted-foreground">
+              Categoria Inter: {row.entry.sourceCategory}
+            </span>
+          )}
+          {row.entry.cardSettlementStatus && (
+            <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              {row.entry.cardSettlementStatus === "LINKED"
+                ? "Fatura vinculada às compras"
+                : row.entry.cardSettlementStatus === "NOT_RELATED"
+                  ? "Fatura sem vínculo · gasto agregado"
+                  : "Fatura · gasto agregado"}
+            </span>
+          )}
+        </span>
       ),
     },
     {
@@ -374,7 +393,7 @@ export function FinancialEntriesTable({
     },
     {
       id: "source",
-      label: "Origem",
+      label: "Registro",
       width: "115px",
       value: (row) => row.source,
       filterOptions: sourceFilterOptions,
@@ -383,6 +402,18 @@ export function FinancialEntriesTable({
           {row.source}
         </span>
       ),
+    },
+    {
+      id: "channel",
+      label: "Canal",
+      width: "115px",
+      value: (row) => row.entry.channel ?? "MANUAL",
+      render: (row) =>
+        row.entry.channel === "CARD"
+          ? "Cartão"
+          : row.entry.channel === "ACCOUNT"
+            ? "Conta"
+            : "Manual",
     },
     {
       id: "kind",

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 
 const database = vi.hoisted(() => ({
@@ -165,6 +166,223 @@ describe("FinancialStatementImportRepository", () => {
     expect(where).toHaveBeenCalledOnce();
   });
 
+  it("scopes duplicate matching to card or non-card sources", async () => {
+    const where = vi.fn().mockResolvedValue([]);
+    database.select.mockReturnValue({ from: () => ({ where }) });
+    const row = {
+      sourceRow: 2,
+      kind: "EXPENSE" as const,
+      description: "Compra",
+      actualDate: "2026-11-14",
+      actualAmount: 10,
+    };
+    await runWithDataOwner("owner-card-dedupe", () =>
+      repository.findPossibleDuplicateRows([row], "CARD"),
+    );
+    expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toEqual(
+      expect.arrayContaining(["owner-card-dedupe", "CARD"]),
+    );
+
+    await runWithDataOwner("owner-account-dedupe", () =>
+      repository.findPossibleDuplicateRows([row], "ACCOUNT"),
+    );
+    expect(new PgDialect().sqlToQuery(where.mock.calls[1][0]).params).toEqual(
+      expect.arrayContaining(["owner-account-dedupe", "CARD"]),
+    );
+  });
+
+  it("stores exact card coverage and leaves existing invoice statuses untouched", async () => {
+    const insertedImports: Array<Record<string, unknown>> = [];
+    const insertedEntries: Array<Record<string, unknown>> = [];
+    let selectIndex = 0;
+    const select = vi.fn(() => {
+      const current = selectIndex++;
+      return {
+        from: () => ({
+          where: () =>
+            current === 0 ? Promise.resolve([]) : { limit: async () => [] },
+        }),
+      };
+    });
+    let insertIndex = 0;
+    const insert = vi.fn(() => {
+      const current = insertIndex++;
+      return {
+        values: (value: Record<string, unknown>) => {
+          if (current === 0) insertedImports.push(value);
+          if (current === 2) insertedEntries.push(value);
+          return {
+            onConflictDoNothing: () => ({
+              returning: async () =>
+                current === 0
+                  ? [{ id: "card-import" }]
+                  : [{ id: "import-row" }],
+            }),
+            returning: async () => [{ id: "card-entry" }],
+          };
+        },
+      };
+    });
+    const update = vi.fn(() => ({
+      set: () => ({ where: async () => undefined }),
+    }));
+    const transaction = { select, insert, update, execute: vi.fn() };
+    database.transaction.mockImplementation(async (callback) =>
+      callback(transaction),
+    );
+    markDatesForReview.mockResolvedValue(undefined);
+
+    await expect(
+      runWithDataOwner("owner-card-import", () =>
+        repository.confirm({
+          fileHash: "c".repeat(64),
+          source: "CARD",
+          coverageStart: "2026-11-08",
+          coverageEnd: "2026-11-14",
+          rememberCategories: false,
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Compra no cartão",
+              categoryId: "123e4567-e89b-42d3-a456-426614174000",
+              sourceCategory: "COMPRAS",
+              actualDate: "2026-11-14",
+              actualAmount: 25,
+            },
+          ],
+        }),
+      ),
+    ).resolves.toEqual({
+      importedCount: 1,
+      alreadyImportedCount: 0,
+      duplicateCount: 0,
+    });
+
+    expect(insertedImports[0]).toMatchObject({
+      source: "CARD",
+      coverageStart: "2026-11-08",
+      coverageEnd: "2026-11-14",
+    });
+    expect(insertedEntries[0]).toMatchObject({
+      channel: "CARD",
+      sourceCategory: "COMPRAS",
+      cardSettlementStatus: null,
+      actualDate: "2026-11-14",
+    });
+    expect(update).toHaveBeenCalledOnce();
+    expect(markDatesForReview).toHaveBeenCalledWith(
+      expect.any(Object),
+      "owner-card-import",
+      ["2026-11-14"],
+    );
+  });
+
+  it("imports account invoice rows as aggregate expenses eligible for review", async () => {
+    const insertedEntries: Array<Record<string, unknown>> = [];
+    let selectIndex = 0;
+    const select = vi.fn(() => {
+      const current = selectIndex++;
+      return {
+        from: () => ({
+          where: () =>
+            current === 0 ? Promise.resolve([]) : { limit: async () => [] },
+        }),
+      };
+    });
+    let insertIndex = 0;
+    const insert = vi.fn(() => {
+      const current = insertIndex++;
+      return {
+        values: (value: Record<string, unknown>) => {
+          if (current === 2) insertedEntries.push(value);
+          return {
+            onConflictDoNothing: () => ({
+              returning: async () => [{ id: `row-${current}` }],
+            }),
+            returning: async () => [{ id: "account-invoice-entry" }],
+          };
+        },
+      };
+    });
+    const update = vi.fn(() => ({
+      set: () => ({ where: async () => undefined }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, update, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-account-invoice", () =>
+        repository.confirm(
+          {
+            fileHash: "e".repeat(64),
+            rememberCategories: false,
+            rows: [
+              {
+                sourceRow: 8,
+                kind: "EXPENSE",
+                description: "Pagamento fatura cartão",
+                categoryId: "123e4567-e89b-42d3-a456-426614174000",
+                actualDate: "2026-11-20",
+                actualAmount: 100,
+              },
+            ],
+          },
+          [8],
+        ),
+      ),
+    ).resolves.toMatchObject({ importedCount: 1, duplicateCount: 0 });
+    expect(insertedEntries[0]).toMatchObject({
+      channel: "ACCOUNT",
+      cardSettlementStatus: "AGGREGATE",
+      kind: "EXPENSE",
+      actualAmount: "100.00",
+    });
+  });
+
+  it("rejects reusing a file hash under a different source", async () => {
+    let selectIndex = 0;
+    const select = vi.fn(() => {
+      const current = selectIndex++;
+      return {
+        from: () => ({
+          where: () =>
+            current === 0
+              ? Promise.resolve([])
+              : {
+                  limit: async () => [{ id: "prior-import", source: "CARD" }],
+                },
+        }),
+      };
+    });
+    const insert = vi.fn();
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-cross-source", () =>
+        repository.confirm({
+          fileHash: "f".repeat(64),
+          source: "ACCOUNT",
+          rememberCategories: false,
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Conta de luz",
+              categoryId: "123e4567-e89b-42d3-a456-426614174000",
+              actualDate: "2026-11-20",
+              actualAmount: 50,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("fails safely when an import reservation loses a race and cannot be found", async () => {
     let selectCount = 0;
     const select = vi.fn(() => ({
@@ -205,7 +423,9 @@ describe("FinancialStatementImportRepository", () => {
         where: () => ({
           limit: async () => {
             selectCount += 1;
-            return selectCount === 1 ? [] : [{ id: "concurrent-import" }];
+            return selectCount === 1
+              ? []
+              : [{ id: "concurrent-import", source: "ACCOUNT" }];
           },
         }),
       }),
@@ -238,6 +458,42 @@ describe("FinancialStatementImportRepository", () => {
       "owner-a",
       [],
     );
+  });
+
+  it("rejects a concurrent file-hash reservation created for another source", async () => {
+    let selectCount = 0;
+    const select = vi.fn(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCount += 1;
+            return selectCount === 1
+              ? []
+              : [{ id: "concurrent-card-import", source: "CARD" }];
+          },
+        }),
+      }),
+    }));
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({ returning: async () => [] }),
+      }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, execute: vi.fn().mockResolvedValue([]) }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-race", () =>
+        repository.confirm({
+          fileHash: "a".repeat(64),
+          source: "ACCOUNT",
+          rememberCategories: false,
+          rows: [],
+        }),
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(selectCount).toBe(2);
   });
 
   it("fails the transaction when a reserved row cannot create its financial entry", async () => {

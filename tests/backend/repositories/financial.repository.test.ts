@@ -77,6 +77,35 @@ describe("FinancialRepository", () => {
     );
   });
 
+  it("lists intersecting statement coverage only for the active owner", async () => {
+    const rows = [
+      {
+        source: "CARD",
+        coverageStart: "2026-10-01",
+        coverageEnd: "2026-10-31",
+      },
+    ];
+    const orderBy = vi.fn().mockResolvedValue(rows);
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const from = vi.fn().mockReturnValue({ where });
+    database.select.mockReturnValue({ from });
+
+    await expect(
+      runWithDataOwner("owner-coverage", () =>
+        repository.listStatementCoverage("2026-10-01", "2026-10-31"),
+      ),
+    ).resolves.toEqual(rows);
+    expect(new PgDialect().sqlToQuery(where.mock.calls[0][0]).params).toEqual(
+      expect.arrayContaining(["owner-coverage", "2026-10-31", "2026-10-01"]),
+    );
+    orderBy.mockResolvedValueOnce([]);
+    await expect(
+      runWithDataOwner("owner-coverage", () =>
+        repository.listStatementCoverage("2026-10-01", "2026-10-31"),
+      ),
+    ).resolves.toEqual([]);
+  });
+
   it("finds entries only for the current owner and returns null for missing rows", async () => {
     const limit = vi.fn().mockResolvedValue([{ id: "entry" }]);
     const where = vi.fn().mockReturnValue({ limit });
@@ -232,7 +261,7 @@ describe("FinancialRepository", () => {
         }),
       ),
     ).resolves.toBeNull();
-    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.select).toHaveBeenCalledTimes(3);
     expect(transaction.update).not.toHaveBeenCalled();
   });
 
@@ -463,7 +492,7 @@ describe("FinancialRepository", () => {
         ),
       ),
     ).rejects.toThrow("The linked financial entry could not be found.");
-    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.select).toHaveBeenCalledTimes(3);
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
@@ -536,7 +565,7 @@ describe("FinancialRepository", () => {
         repository.deleteEntry("entry-id"),
       ),
     ).resolves.toBeNull();
-    expect(transaction.select).toHaveBeenCalledTimes(2);
+    expect(transaction.select).toHaveBeenCalledTimes(3);
     expect(transaction.delete).not.toHaveBeenCalled();
   });
 });

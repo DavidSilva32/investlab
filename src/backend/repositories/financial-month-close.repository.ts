@@ -17,6 +17,9 @@ export type FinancialCloseTotals = {
   realizedExpenses: string | null;
   expectedBalance: string | null;
   recordedBalance: string | null;
+  realizedCardSpending?: string | null;
+  accountCashOutflow?: string | null;
+  accountCashBalance?: string | null;
 };
 
 export type FinancialCloseHistoryItem = {
@@ -33,6 +36,25 @@ export type FinancialCloseState = {
 
 function monthsFromDates(dates: Array<string | null | undefined>) {
   return [...new Set(dates.filter(Boolean).map((date) => date!.slice(0, 7)))];
+}
+
+function completeTotals(totals: {
+  expectedIncome: string | null;
+  realizedIncome: string | null;
+  expectedExpenses: string | null;
+  realizedExpenses: string | null;
+  expectedBalance: string | null;
+  recordedBalance: string | null;
+  realizedCardSpending?: string | null;
+  accountCashOutflow?: string | null;
+  accountCashBalance?: string | null;
+}): FinancialCloseTotals {
+  return {
+    ...totals,
+    realizedCardSpending: totals.realizedCardSpending ?? null,
+    accountCashOutflow: totals.accountCashOutflow ?? null,
+    accountCashBalance: totals.accountCashBalance ?? null,
+  };
 }
 
 export class FinancialMonthCloseRepository {
@@ -127,10 +149,10 @@ export class FinancialMonthCloseRepository {
           ? ("needs_review" as const)
           : ("closed" as const),
       closedAt: closure.closedAt.toISOString(),
-      totals: version.totals,
+      totals: completeTotals(version.totals),
       history: history.map((item) => ({
         closedAt: item.closedAt.toISOString(),
-        totals: item.totals,
+        totals: completeTotals(item.totals),
       })),
     };
   }
@@ -174,7 +196,7 @@ export class FinancialMonthCloseRepository {
       await transaction.insert(financialMonthlyClosureVersions).values({
         closureId: closure.id,
         version: closure.currentVersion,
-        totals,
+        totals: completeTotals(totals),
         closedAt: now,
       });
       const history = await transaction

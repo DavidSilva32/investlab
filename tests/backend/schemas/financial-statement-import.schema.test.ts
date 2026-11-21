@@ -71,6 +71,28 @@ describe("statementConfirmSchema", () => {
   });
 
   it.each([
+    { coverageStart: "2026-11-01", coverageEnd: null },
+    { coverageStart: "2026-11-20", coverageEnd: "2026-11-01" },
+  ])(
+    "rejects an incomplete or reversed observed coverage range",
+    (coverage) => {
+      const result = statementConfirmSchema.safeParse({
+        ...validInput,
+        ...coverage,
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            code: "custom",
+            message: "Confira o período coberto pelo extrato.",
+          }),
+        );
+      }
+    },
+  );
+
+  it.each([
     { fileHash: "bad" },
     { rows: [] },
     { rows: Array.from({ length: 501 }, () => validInput.rows[0]) },

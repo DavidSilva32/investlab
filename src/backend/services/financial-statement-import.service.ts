@@ -4,11 +4,15 @@ import {
   financialStatementImportRepository,
   normalizeStatementDescription,
 } from "@/backend/repositories/financial-statement-import.repository";
-import { statementConfirmSchema } from "@/backend/schemas/financial-statement-import.schema";
+import {
+  statementConfirmSchema,
+  type ParsedStatementConfirmInput,
+} from "@/backend/schemas/financial-statement-import.schema";
 import type { FinancialKind } from "@/backend/schemas/financial.schema";
 import {
   parseStatementFile,
   parseStatementRows,
+  type FinancialStatementSource,
   type StatementColumnMapping,
   type StatementRawRow,
 } from "@/backend/services/financial-statement-import-parser";
@@ -154,7 +158,38 @@ function hasExplicitAmountEvidence(rows: StatementRawRow[], column: number) {
 function defaultMapping(
   headers: string[],
   rows: StatementRawRow[],
+  source?: FinancialStatementSource,
 ): StatementColumnMapping {
+  if (source === "INTER_CREDIT_CARD") {
+    const columns = new Map(
+      headers.map((header, index) => [normalizeHeader(header), index]),
+    );
+    const required = ["data", "lancamento", "categoria", "tipo", "valor"];
+    if (
+      required.some(
+        (header) =>
+          headers.filter((value) => normalizeHeader(value) === header)
+            .length !== 1,
+      )
+    ) {
+      throw new ApplicationError(
+        "Não foi possível reconhecer o extrato do cartão Inter.",
+        400,
+      );
+    }
+    const dateColumn = columns.get("data")!;
+    const amountColumn = columns.get("valor")!;
+    return {
+      dateColumn,
+      descriptionColumn: columns.get("lancamento")!,
+      amountColumn,
+      sourceCategoryColumn: columns.get("categoria")!,
+      transactionTypeColumn: columns.get("tipo")!,
+      source,
+      dateFormat: inferDateFormat(rows, dateColumn),
+      decimalSeparator: inferDecimalSeparator(rows, [amountColumn]),
+    };
+  }
   const dateCandidates = headers
     .map((_, index) => index)
     .filter(
@@ -329,11 +364,17 @@ function normalizedKeywords(description: string) {
     .toLocaleUpperCase("pt-BR");
 }
 
+function isExplicitCardSettlement(description: string) {
+  return /\b(?:PAGAMENTO|PAGTO)\s+(?:(?:DA|DE)\s+)?FATURA\s+(?:DO\s+)?CARTAO\b/.test(
+    normalizedKeywords(description),
+  );
+}
+
 function inferEverydayCategory(description: string, kind: FinancialKind) {
   const text = normalizedKeywords(description);
   if (
     kind === "EXPENSE" &&
-    /\b(?:PAGAMENTO|PAGTO|DEBITO)\s+(?:DA\s+)?FATURA\s+(?:DO\s+)?CARTAO\b/.test(
+    /\b(?:PAGAMENTO|PAGTO|DEBITO)\s+(?:(?:DA|DE)\s+)?FATURA\s+(?:DO\s+)?CARTAO\b/.test(
       text,
     )
   ) {
@@ -471,14 +512,33 @@ function inferEverydayCategory(description: string, kind: FinancialKind) {
   return null;
 }
 
+function inferInterCategory(sourceCategory: string | null | undefined) {
+  const category = normalizeHeader(sourceCategory ?? "");
+  if (category === "transporte") return "Transporte";
+  if (category === "restaurantes" || category === "supermercado")
+    return "Alimentação";
+  if (category === "drogaria") return "Saúde";
+  return null;
+}
+
 export class FinancialStatementImportService {
   async preview(
     file: { name: string; buffer: Buffer },
     _ignoredMapping?: unknown,
   ) {
     const parsedFile = parseStatementFile(file.name, file.buffer);
-    const mapping = defaultMapping(parsedFile.headers, parsedFile.rows);
+    const source =
+      parsedFile.source === "INTER_CREDIT_CARD" ? "CARD" : "ACCOUNT";
+    const mapping = defaultMapping(
+      parsedFile.headers,
+      parsedFile.rows,
+      source === "CARD" ? "INTER_CREDIT_CARD" : "GENERIC",
+    );
     const rows = parseStatementRows(parsedFile.rows, mapping);
+    const recognizedDates = rows
+      .map((row) => row.actualDate)
+      .filter((date): date is string => Boolean(date))
+      .sort();
     const validRows = rows
       .filter(
         (row) =>
@@ -530,10 +590,14 @@ export class FinancialStatementImportService {
     const duplicateRows =
       await financialStatementImportRepository.findPossibleDuplicateRows(
         validRows.filter((row) => !alreadyImported.has(row.sourceRow)),
+        source,
       );
     return {
       hash: parsedFile.hash,
       headers: parsedFile.headers,
+      source,
+      coverageStart: recognizedDates[0] ?? null,
+      coverageEnd: recognizedDates.at(-1) ?? null,
       mapping,
       rows: rows.map((row) => {
         const descriptionKey = normalizeStatementDescription(row.description);
@@ -543,7 +607,9 @@ export class FinancialStatementImportService {
           ? savedCategoryByDescription.get(key)
           : undefined;
         const suggestedName = kind
-          ? inferEverydayCategory(row.description, kind)
+          ? source === "CARD"
+            ? inferInterCategory(row.sourceCategory)
+            : inferEverydayCategory(row.description, kind)
           : null;
         const suggestedCategoryId = categories.find(
           (category) =>
@@ -577,7 +643,7 @@ export class FinancialStatementImportService {
   }
 
   async confirm(rawInput: unknown) {
-    const input = assertSchema(
+    const input = assertSchema<ParsedStatementConfirmInput>(
       statementConfirmSchema,
       rawInput,
       "Revise os lançamentos antes de confirmar.",
@@ -600,7 +666,31 @@ export class FinancialStatementImportService {
         400,
       );
     }
-    const result = await financialStatementImportRepository.confirm(input);
+    const categoryById = new Map(
+      categories.map((category) => [category.id, category]),
+    );
+    const cardSettlementSourceRows =
+      input.source === "ACCOUNT"
+        ? input.rows
+            .filter((row) => {
+              const category = row.categoryId
+                ? categoryById.get(row.categoryId)
+                : undefined;
+              return (
+                (row.kind === "EXPENSE" &&
+                  isExplicitCardSettlement(row.description)) ||
+                (row.kind === "EXPENSE" &&
+                  normalizeHeader(
+                    category?.originalName ?? category?.name ?? "",
+                  ) === "fatura do cartao")
+              );
+            })
+            .map((row) => row.sourceRow)
+        : [];
+    const result = await financialStatementImportRepository.confirm(
+      input,
+      cardSettlementSourceRows,
+    );
     return {
       ...result,
       skippedCount: result.alreadyImportedCount + result.duplicateCount,
