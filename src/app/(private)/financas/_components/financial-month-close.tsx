@@ -36,6 +36,9 @@ export type FinancialMonthClose = {
     realizedIncome: string | null;
     expectedExpenses: string | null;
     realizedExpenses: string | null;
+    realizedCardSpending?: string | null;
+    accountCashOutflow?: string | null;
+    accountCashBalance?: string | null;
     expectedBalance: string | null;
     recordedBalance: string | null;
   };

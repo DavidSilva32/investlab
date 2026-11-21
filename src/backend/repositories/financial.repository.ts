@@ -1,13 +1,110 @@
-import { and, asc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
 import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   financialCategories,
   financialCategoryPreferences,
   financialEntries,
+  financialCardSettlementLinks,
   financialRecurrences,
+  financialStatementImports,
 } from "@/infrastructure/database/schema";
 import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
+
+type FinancialTransaction = Parameters<
+  Parameters<ReturnType<typeof getDatabaseClient>["transaction"]>[0]
+>[0];
+
+type LinkedSettlementContext = {
+  settlementEntryIds: string[];
+  dates: Array<string | null>;
+};
+
+async function getLinkedSettlementContext(
+  transaction: FinancialTransaction,
+  userId: string,
+  entryId: string,
+): Promise<LinkedSettlementContext> {
+  const [link] = await transaction
+    .select({
+      settlementEntryId: financialCardSettlementLinks.settlementEntryId,
+    })
+    .from(financialCardSettlementLinks)
+    .where(
+      and(
+        eq(financialCardSettlementLinks.userId, userId),
+        or(
+          eq(financialCardSettlementLinks.settlementEntryId, entryId),
+          eq(financialCardSettlementLinks.cardEntryId, entryId),
+        ),
+      ),
+    )
+    .limit(1);
+  if (!link?.settlementEntryId) return { settlementEntryIds: [], dates: [] };
+
+  const settlementEntryIds = [link.settlementEntryId];
+  const links = await transaction
+    .select({ cardEntryId: financialCardSettlementLinks.cardEntryId })
+    .from(financialCardSettlementLinks)
+    .where(
+      and(
+        eq(financialCardSettlementLinks.userId, userId),
+        inArray(
+          financialCardSettlementLinks.settlementEntryId,
+          settlementEntryIds,
+        ),
+      ),
+    );
+  const entryIds = [
+    ...settlementEntryIds,
+    ...links.map((row) => row.cardEntryId),
+  ];
+  const entries = await transaction
+    .select({
+      expectedDate: financialEntries.expectedDate,
+      actualDate: financialEntries.actualDate,
+    })
+    .from(financialEntries)
+    .where(
+      and(
+        eq(financialEntries.userId, userId),
+        inArray(financialEntries.id, entryIds),
+      ),
+    );
+  return {
+    settlementEntryIds,
+    dates: entries.flatMap((entry) => [entry.expectedDate, entry.actualDate]),
+  };
+}
+
+async function resetLinkedSettlement(
+  transaction: FinancialTransaction,
+  userId: string,
+  context: LinkedSettlementContext,
+) {
+  if (context.settlementEntryIds.length === 0) return;
+  await transaction
+    .update(financialEntries)
+    .set({ cardSettlementStatus: "AGGREGATE", updatedAt: new Date() })
+    .where(
+      and(
+        eq(financialEntries.userId, userId),
+        inArray(financialEntries.id, context.settlementEntryIds),
+        eq(financialEntries.cardSettlementStatus, "LINKED"),
+      ),
+    );
+  await transaction
+    .delete(financialCardSettlementLinks)
+    .where(
+      and(
+        eq(financialCardSettlementLinks.userId, userId),
+        inArray(
+          financialCardSettlementLinks.settlementEntryId,
+          context.settlementEntryIds,
+        ),
+      ),
+    );
+}
 
 export type FinancialCategoryRecord = {
   id: string;
@@ -83,6 +180,9 @@ export class FinancialRepository {
         description: financialEntries.description,
         categoryId: financialEntries.categoryId,
         recurrenceId: financialEntries.recurrenceId,
+        channel: financialEntries.channel,
+        sourceCategory: financialEntries.sourceCategory,
+        cardSettlementStatus: financialEntries.cardSettlementStatus,
         categoryName,
         expectedAmount: financialEntries.expectedAmount,
         expectedDate: financialEntries.expectedDate,
@@ -122,6 +222,26 @@ export class FinancialRepository {
         asc(financialEntries.expectedDate),
         asc(financialEntries.actualDate),
       );
+  }
+
+  async listStatementCoverage(startDate: string, endDate: string) {
+    const userId = requireDataOwnerId();
+    return getDatabaseClient()
+      .select({
+        source: financialStatementImports.source,
+        coverageStart: financialStatementImports.coverageStart,
+        coverageEnd: financialStatementImports.coverageEnd,
+        importedAt: financialStatementImports.importedAt,
+      })
+      .from(financialStatementImports)
+      .where(
+        and(
+          eq(financialStatementImports.userId, userId),
+          lte(financialStatementImports.coverageStart, endDate),
+          gte(financialStatementImports.coverageEnd, startDate),
+        ),
+      )
+      .orderBy(asc(financialStatementImports.importedAt));
   }
 
   async findCategory(id: string) {
@@ -186,11 +306,17 @@ export class FinancialRepository {
         )
         .limit(1);
       if (!snapshot) return null;
+      const linkedSettlement = await getLinkedSettlementContext(
+        transaction,
+        userId,
+        id,
+      );
       const dates = [
         snapshot.expectedDate,
         snapshot.actualDate,
         input.expectedDate,
         input.actualDate,
+        ...linkedSettlement.dates,
       ];
       await financialMonthCloseRepository.acquireMonthLocks(
         transaction,
@@ -211,6 +337,7 @@ export class FinancialRepository {
         .for("update")
         .limit(1);
       if (!existing) return null;
+      await resetLinkedSettlement(transaction, userId, linkedSettlement);
       await financialMonthCloseRepository.markDatesForReview(
         transaction,
         userId,
@@ -257,6 +384,9 @@ export class FinancialRepository {
       if (id && !existing) {
         throw new Error("The linked financial entry could not be found.");
       }
+      const linkedSettlement = id
+        ? await getLinkedSettlementContext(transaction, userId, id)
+        : { settlementEntryIds: [], dates: [] };
       await financialMonthCloseRepository.acquireMonthLocks(
         transaction,
         userId,
@@ -265,6 +395,7 @@ export class FinancialRepository {
           existing?.actualDate,
           input.expectedDate,
           input.actualDate,
+          ...linkedSettlement.dates,
         ]
           .filter((date): date is string => Boolean(date))
           .map((date) => date.slice(0, 7)),
@@ -284,6 +415,7 @@ export class FinancialRepository {
         if (!lockedEntry) {
           throw new Error("The linked financial entry could not be found.");
         }
+        await resetLinkedSettlement(transaction, userId, linkedSettlement);
       }
       const [createdRecurrence] = await transaction
         .insert(financialRecurrences)
@@ -323,6 +455,7 @@ export class FinancialRepository {
           existing?.actualDate,
           input.expectedDate,
           input.actualDate,
+          ...linkedSettlement.dates,
         ],
       );
       return entry;
@@ -347,10 +480,15 @@ export class FinancialRepository {
         )
         .limit(1);
       if (!existing) return null;
+      const linkedSettlement = await getLinkedSettlementContext(
+        transaction,
+        userId,
+        id,
+      );
       await financialMonthCloseRepository.acquireMonthLocks(
         transaction,
         userId,
-        [existing.expectedDate, existing.actualDate]
+        [existing.expectedDate, existing.actualDate, ...linkedSettlement.dates]
           .filter((date): date is string => Boolean(date))
           .map((date) => date.slice(0, 7)),
       );
@@ -363,10 +501,11 @@ export class FinancialRepository {
         .for("update")
         .limit(1);
       if (!lockedEntry) return null;
+      await resetLinkedSettlement(transaction, userId, linkedSettlement);
       await financialMonthCloseRepository.markDatesForReview(
         transaction,
         userId,
-        [existing.expectedDate, existing.actualDate],
+        [existing.expectedDate, existing.actualDate, ...linkedSettlement.dates],
       );
       const [entry] = await transaction
         .delete(financialEntries)

@@ -5,6 +5,7 @@ import {
   bigserial,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -913,6 +914,9 @@ export const financialEntries = pgTable(
     categoryId: uuid()
       .notNull()
       .references(() => financialCategories.id, { onDelete: "restrict" }),
+    channel: varchar({ length: 12 }).notNull().default("MANUAL"),
+    sourceCategory: varchar({ length: 80 }),
+    cardSettlementStatus: varchar({ length: 16 }),
     recurrenceId: uuid().references(() => financialRecurrences.id, {
       onDelete: "set null",
     }),
@@ -927,6 +931,18 @@ export const financialEntries = pgTable(
     check(
       "financial_entries_kind_check",
       sql`${table.kind} in ('INCOME', 'EXPENSE')`,
+    ),
+    check(
+      "financial_entries_channel_check",
+      sql`${table.channel} in ('MANUAL', 'ACCOUNT', 'CARD')`,
+    ),
+    check(
+      "financial_entries_card_settlement_status_check",
+      sql`${table.cardSettlementStatus} is null or ${table.cardSettlementStatus} in ('AGGREGATE', 'LINKED', 'NOT_RELATED')`,
+    ),
+    check(
+      "financial_entries_card_settlement_source_check",
+      sql`${table.cardSettlementStatus} is null or (${table.channel} in ('ACCOUNT', 'MANUAL') and ${table.kind} = 'EXPENSE')`,
     ),
     check(
       "financial_entries_expected_pair_check",
@@ -949,6 +965,7 @@ export const financialEntries = pgTable(
       table.actualDate,
     ),
     index("financial_entries_recurrence_idx").on(table.recurrenceId),
+    uniqueIndex("financial_entries_user_id_uidx").on(table.userId, table.id),
   ],
 );
 
@@ -960,12 +977,23 @@ export const financialStatementImports = pgTable(
       .references(() => authUsers.id, { onDelete: "cascade" }),
     id: uuid().defaultRandom().primaryKey(),
     fileHash: varchar({ length: 64 }).notNull(),
+    source: varchar({ length: 12 }).notNull().default("ACCOUNT"),
+    coverageStart: date(),
+    coverageEnd: date(),
     importedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("financial_statement_imports_user_hash_uidx").on(
       table.userId,
       table.fileHash,
+    ),
+    check(
+      "financial_statement_imports_source_check",
+      sql`${table.source} in ('ACCOUNT', 'CARD')`,
+    ),
+    check(
+      "financial_statement_imports_coverage_pair_check",
+      sql`(${table.coverageStart} is null and ${table.coverageEnd} is null) or (${table.coverageStart} is not null and ${table.coverageEnd} is not null and ${table.coverageStart} <= ${table.coverageEnd})`,
     ),
   ],
 );
@@ -990,6 +1018,44 @@ export const financialStatementImportRows = pgTable(
     uniqueIndex("financial_statement_import_rows_import_row_uidx").on(
       table.importId,
       table.sourceRow,
+    ),
+  ],
+);
+
+export const financialCardSettlementLinks = pgTable(
+  "financial_card_settlement_links",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    settlementEntryId: uuid().notNull(),
+    cardEntryId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "financial_card_settlement_links_settlement_owner_fk",
+      columns: [table.userId, table.settlementEntryId],
+      foreignColumns: [financialEntries.userId, financialEntries.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "financial_card_settlement_links_card_owner_fk",
+      columns: [table.userId, table.cardEntryId],
+      foreignColumns: [financialEntries.userId, financialEntries.id],
+    }).onDelete("cascade"),
+    uniqueIndex("financial_card_settlement_links_user_card_uidx").on(
+      table.userId,
+      table.cardEntryId,
+    ),
+    uniqueIndex("financial_card_settlement_links_pair_uidx").on(
+      table.userId,
+      table.settlementEntryId,
+      table.cardEntryId,
+    ),
+    check(
+      "financial_card_settlement_links_distinct_entries_check",
+      sql`${table.settlementEntryId} <> ${table.cardEntryId}`,
     ),
   ],
 );
@@ -1065,6 +1131,9 @@ export const financialMonthlyClosureVersions = pgTable(
         realizedExpenses: string | null;
         expectedBalance: string | null;
         recordedBalance: string | null;
+        realizedCardSpending?: string | null;
+        accountCashOutflow?: string | null;
+        accountCashBalance?: string | null;
       }>()
       .notNull(),
     closedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

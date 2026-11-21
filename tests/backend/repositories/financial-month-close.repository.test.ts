@@ -287,8 +287,23 @@ describe("FinancialMonthCloseRepository", () => {
     await expect(repository.getCurrent("2026-10")).resolves.toEqual({
       status: "needs_review",
       closedAt: closedAt.toISOString(),
-      totals,
-      history: [{ closedAt: previousClosedAt.toISOString(), totals }],
+      totals: {
+        ...totals,
+        realizedCardSpending: null,
+        accountCashOutflow: null,
+        accountCashBalance: null,
+      },
+      history: [
+        {
+          closedAt: previousClosedAt.toISOString(),
+          totals: {
+            ...totals,
+            realizedCardSpending: null,
+            accountCashOutflow: null,
+            accountCashBalance: null,
+          },
+        },
+      ],
     });
     await expect(repository.listVersions("2026-10")).resolves.toEqual([
       versionRow,

@@ -107,6 +107,23 @@ describe("withApiRequestLogging", () => {
     expect(terms.hasAcceptedCurrentTerms).toHaveBeenCalledWith("owner-1");
   });
 
+  it("authenticates settlement review and provides its owner context", async () => {
+    const endpoint = vi.fn(async (_request: Request) =>
+      Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const handler = withApiRequestLogging(
+      "GET",
+      "/api/financial-card-settlements",
+      endpoint,
+    );
+    const response = await handler(
+      new Request("https://investlab.test/api/financial-card-settlements"),
+    );
+    await expect(response.json()).resolves.toEqual({ ownerId: "owner-1" });
+    expect(endpoint).toHaveBeenCalledOnce();
+    expect(terms.hasAcceptedCurrentTerms).toHaveBeenCalledWith("owner-1");
+  });
+
   it("replaces malformed request IDs and passes the generated ID downstream", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const handler = withApiRequestLogging(
@@ -312,6 +329,39 @@ describe("withApiRequestLogging", () => {
           headers: { cookie: "investlab-support-view=token" },
         },
       ),
+    );
+    expect(writeResponse.status).toBe(403);
+  });
+
+  it("allows support-mode settlement review reads but blocks mutations", async () => {
+    support.token = "a".repeat(43);
+    support.active = { targetUserId: "customer-1" };
+    const get = withApiRequestLogging(
+      "GET",
+      "/api/financial-card-settlements",
+      async (_request: Request) => Response.json({ ownerId: getDataOwnerId() }),
+    );
+    const readResponse = await get(
+      new Request("https://investlab.test/api/financial-card-settlements", {
+        headers: { cookie: "investlab-support-view=token" },
+      }),
+    );
+    await expect(readResponse.json()).resolves.toEqual({
+      ownerId: "customer-1",
+    });
+    expect(readResponse.headers.get("cache-control")).toBe("no-store");
+
+    const post = withApiRequestLogging(
+      "POST",
+      "/api/financial-card-settlements",
+      vi.fn(async (_request: Request) => Response.json({ changed: true })),
+    );
+    const writeResponse = await post(
+      new Request("https://investlab.test/api/financial-card-settlements", {
+        method: "POST",
+        headers: { cookie: "investlab-support-view=token" },
+        body: "{}",
+      }),
     );
     expect(writeResponse.status).toBe(403);
   });
@@ -589,6 +639,7 @@ describe("withApiRequestLogging", () => {
       "/api/emergency-reserve",
       "/api/finance-overview",
       "/api/financial-entries",
+      "/api/financial-card-settlements",
       "/api/financial-categories",
       "/api/financial-recurrences",
       "/api/analyses/portfolio-opportunities",

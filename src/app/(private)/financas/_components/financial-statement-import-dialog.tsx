@@ -34,6 +34,9 @@ type Category = {
 };
 type PreviewResponse = {
   hash: string;
+  source?: "ACCOUNT" | "CARD";
+  coverageStart?: string | null;
+  coverageEnd?: string | null;
   rows: Array<
     ParsedStatementRow & {
       alreadyImported?: boolean;
@@ -228,12 +231,16 @@ export function FinancialStatementImportDialog({
           method: "POST",
           body: JSON.stringify({
             fileHash: selectedPreview.hash,
+            source: selectedPreview.source ?? "ACCOUNT",
+            coverageStart: selectedPreview.coverageStart ?? null,
+            coverageEnd: selectedPreview.coverageEnd ?? null,
             rememberCategories,
             rows: includedRows.map((row) => ({
               sourceRow: row.sourceRow,
               kind: row.kind,
               description: row.description.trim(),
               categoryId: row.categoryId || null,
+              sourceCategory: row.sourceCategory ?? null,
               possibleDuplicate: row.possibleDuplicate,
               actualDate: toIsoDate(row.actualDate),
               actualAmount: Number(String(row.amount).replace(",", ".")),
@@ -360,6 +367,13 @@ export function FinancialStatementImportDialog({
                   {needsCategoryCount === 1 ? "pendente" : "pendentes"}
                 </p>
               </div>
+              {preview?.source === "CARD" && (
+                <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Extrato do cartão Inter: compras à vista serão despesas na
+                  data indicada. Categorias sem correspondência ficam para
+                  classificação nesta revisão.
+                </p>
+              )}
               <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
                 <table className="w-full table-fixed text-sm">
                   <thead className="sticky top-0 bg-muted">
@@ -422,6 +436,11 @@ export function FinancialStatementImportDialog({
                               }}
                               aria-label={`Descrição da linha ${row.sourceRow}`}
                             />
+                            {row.sourceCategory && (
+                              <p className="mt-1 break-words text-xs text-muted-foreground">
+                                Categoria Inter: {row.sourceCategory}
+                              </p>
+                            )}
                           </td>
                           <td className="p-2">
                             <Select
@@ -432,7 +451,13 @@ export function FinancialStatementImportDialog({
                                   errors: row.errors.filter(
                                     (message) =>
                                       !message.includes("débito ou crédito") &&
-                                      !message.includes("débito e crédito"),
+                                      !message.includes("débito e crédito") &&
+                                      !message.includes(
+                                        "tipo deste lançamento",
+                                      ) &&
+                                      !message.includes(
+                                        "pode ser pagamento de fatura",
+                                      ),
                                   ),
                                 })
                               }
@@ -565,6 +590,11 @@ export function FinancialStatementImportDialog({
                           }}
                           aria-label={`Descrição da linha ${row.sourceRow}`}
                         />
+                        {row.sourceCategory && (
+                          <span className="block text-xs text-muted-foreground">
+                            Categoria Inter: {row.sourceCategory}
+                          </span>
+                        )}
                       </label>
                       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                         <label className="min-w-0 space-y-1 text-xs text-muted-foreground">
@@ -577,7 +607,13 @@ export function FinancialStatementImportDialog({
                                 errors: row.errors.filter(
                                   (message) =>
                                     !message.includes("débito ou crédito") &&
-                                    !message.includes("débito e crédito"),
+                                    !message.includes("débito e crédito") &&
+                                    !message.includes(
+                                      "tipo deste lançamento",
+                                    ) &&
+                                    !message.includes(
+                                      "pode ser pagamento de fatura",
+                                    ),
                                 ),
                               })
                             }

@@ -1,6 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import {
   financialEntries,
+  financialCardSettlementLinks,
   financialStatementCategoryRules,
   financialStatementImportRows,
   financialStatementImports,
@@ -87,6 +88,7 @@ export class FinancialStatementImportRepository {
       actualDate: string;
       actualAmount: number;
     }>,
+    source: "ACCOUNT" | "CARD" = "ACCOUNT",
   ) {
     if (rows.length === 0) return [];
     const userId = requireDataOwnerId();
@@ -103,6 +105,9 @@ export class FinancialStatementImportRepository {
         and(
           eq(financialEntries.userId, userId),
           inArray(financialEntries.actualDate, dates),
+          source === "CARD"
+            ? eq(financialEntries.channel, "CARD")
+            : ne(financialEntries.channel, "CARD"),
         ),
       );
     const remaining = new Map<string, number>();
@@ -126,9 +131,15 @@ export class FinancialStatementImportRepository {
     return duplicates;
   }
 
-  async confirm(input: StatementConfirmInput) {
+  async confirm(
+    input: StatementConfirmInput,
+    cardSettlementSourceRows: number[] = [],
+  ) {
     const userId = requireDataOwnerId();
     const database = getDatabaseClient();
+    const source = input.source ?? "ACCOUNT";
+    const coverageStart = input.coverageStart ?? null;
+    const coverageEnd = input.coverageEnd ?? null;
     return database.transaction(async (transaction) => {
       await financialMonthCloseRepository.acquireFinancialWriteLock(
         transaction,
@@ -156,6 +167,9 @@ export class FinancialStatementImportRepository {
               and(
                 eq(financialEntries.userId, userId),
                 inArray(financialEntries.actualDate, dates),
+                source === "CARD"
+                  ? eq(financialEntries.channel, "CARD")
+                  : ne(financialEntries.channel, "CARD"),
               ),
             )
         : [];
@@ -170,7 +184,10 @@ export class FinancialStatementImportRepository {
         duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
       }
       const [existingImport] = await transaction
-        .select({ id: financialStatementImports.id })
+        .select({
+          id: financialStatementImports.id,
+          source: financialStatementImports.source,
+        })
         .from(financialStatementImports)
         .where(
           and(
@@ -183,13 +200,30 @@ export class FinancialStatementImportRepository {
         ? [existingImport]
         : await transaction
             .insert(financialStatementImports)
-            .values({ userId, fileHash: input.fileHash })
+            .values({
+              userId,
+              fileHash: input.fileHash,
+              source,
+              coverageStart,
+              coverageEnd,
+            })
             .onConflictDoNothing()
-            .returning({ id: financialStatementImports.id });
+            .returning({
+              id: financialStatementImports.id,
+              source: financialStatementImports.source,
+            });
       const [resolvedImport] = statementImport
-        ? [statementImport]
+        ? [
+            {
+              id: statementImport.id,
+              source: statementImport.source ?? source,
+            },
+          ]
         : await transaction
-            .select({ id: financialStatementImports.id })
+            .select({
+              id: financialStatementImports.id,
+              source: financialStatementImports.source,
+            })
             .from(financialStatementImports)
             .where(
               and(
@@ -200,7 +234,12 @@ export class FinancialStatementImportRepository {
             .limit(1);
       if (!resolvedImport)
         throw new Error("Statement import could not be reserved.");
-
+      if (resolvedImport.source !== source) {
+        throw new ApplicationError(
+          "Este arquivo já foi importado com outra origem.",
+          409,
+        );
+      }
       let importedCount = 0;
       let alreadyImportedCount = 0;
       let duplicateCount = 0;
@@ -248,6 +287,13 @@ export class FinancialStatementImportRepository {
             description: row.description,
             categoryId,
             recurrenceId: null,
+            channel: source,
+            sourceCategory: row.sourceCategory ?? null,
+            cardSettlementStatus:
+              source === "ACCOUNT" &&
+              cardSettlementSourceRows.includes(row.sourceRow)
+                ? "AGGREGATE"
+                : null,
             expectedAmount: null,
             expectedDate: null,
             actualAmount: row.actualAmount.toFixed(2),

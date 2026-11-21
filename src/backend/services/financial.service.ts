@@ -367,6 +367,8 @@ export class FinancialService {
                 (entry.kind !== "INCOME" && entry.kind !== "EXPENSE") ||
                 entry.expectedAmount !== null ||
                 entry.actualAmount === null ||
+                (entry.kind === "EXPENSE" &&
+                  entry.cardSettlementStatus === "LINKED") ||
                 !isWithin(
                   entry.actualDate,
                   currentRange.startDate,
@@ -433,17 +435,24 @@ export class FinancialService {
   async getMonthlyOverview(monthValue: string | null | undefined) {
     const month = parseMonth(monthValue);
     const historyEndDate = month.endDate;
-    const [entries, recurrences, savedOccurrences, categories, close] =
-      await Promise.all([
-        financialRepository.listEntries(month.historyStartDate, historyEndDate),
-        financialRecurrencesRepository.listRecurrences(),
-        financialRecurrencesRepository.listOccurrencesForFinancialPeriod(
-          month.historyStartDate,
-          historyEndDate,
-        ),
-        financialRepository.listCategories(),
-        financialMonthCloseRepository.getCurrent(monthValue!),
-      ]);
+    const [
+      entries,
+      recurrences,
+      savedOccurrences,
+      categories,
+      close,
+      statementCoverage,
+    ] = await Promise.all([
+      financialRepository.listEntries(month.historyStartDate, historyEndDate),
+      financialRecurrencesRepository.listRecurrences(),
+      financialRecurrencesRepository.listOccurrencesForFinancialPeriod(
+        month.historyStartDate,
+        historyEndDate,
+      ),
+      financialRepository.listCategories(),
+      financialMonthCloseRepository.getCurrent(monthValue!),
+      financialRepository.listStatementCoverage(month.startDate, month.endDate),
+    ]);
     const currentRange = { startDate: month.startDate, endDate: month.endDate };
     const occurrenceByKey = new Map(
       savedOccurrences.map((occurrence) => [
@@ -576,17 +585,41 @@ export class FinancialService {
           (occurrence) => occurrence.expectedAmount,
         ),
       ]);
-      const realizedExpenses = sumAmounts([
-        ...actualEntries
-          .filter((entry) => entry.kind === "EXPENSE")
+      const spendEntries = actualEntries.filter(
+        (entry) =>
+          entry.kind === "EXPENSE" && entry.cardSettlementStatus !== "LINKED",
+      );
+      const realizedExpenses = sumAmounts(
+        spendEntries.map((entry) => entry.actualAmount),
+      );
+      const realizedCardSpending = sumAmounts(
+        spendEntries
+          .filter((entry) => entry.channel === "CARD")
           .map((entry) => entry.actualAmount),
-      ]);
+      );
+      const accountCashOutflow = sumAmounts(
+        actualEntries
+          .filter(
+            (entry) => entry.kind === "EXPENSE" && entry.channel === "ACCOUNT",
+          )
+          .map((entry) => entry.actualAmount),
+      );
+      const accountCashIncome = sumAmounts(
+        actualEntries
+          .filter(
+            (entry) => entry.kind === "INCOME" && entry.channel === "ACCOUNT",
+          )
+          .map((entry) => entry.actualAmount),
+      );
       return {
         month: historyMonth,
         expectedIncome,
         realizedIncome,
         expectedExpenses,
         realizedExpenses,
+        realizedCardSpending,
+        accountCashOutflow,
+        accountCashBalance: difference(accountCashIncome, accountCashOutflow),
         recordedBalance: difference(realizedIncome, realizedExpenses),
         expectedRecordCount: expectedEntries.length + dueOccurrences.length,
         actualRecordCount: actualEntries.length,
@@ -634,11 +667,32 @@ export class FinancialService {
         .filter((entry) => entry.kind === "INCOME")
         .map((entry) => entry.actualAmount),
     ]);
-    const realizedExpenses = sumAmounts([
-      ...actualEntries
-        .filter((entry) => entry.kind === "EXPENSE")
+    const spendEntries = actualEntries.filter(
+      (entry) =>
+        entry.kind === "EXPENSE" && entry.cardSettlementStatus !== "LINKED",
+    );
+    const realizedExpenses = sumAmounts(
+      spendEntries.map((entry) => entry.actualAmount),
+    );
+    const realizedCardSpending = sumAmounts(
+      spendEntries
+        .filter((entry) => entry.channel === "CARD")
         .map((entry) => entry.actualAmount),
-    ]);
+    );
+    const accountCashOutflow = sumAmounts(
+      actualEntries
+        .filter(
+          (entry) => entry.kind === "EXPENSE" && entry.channel === "ACCOUNT",
+        )
+        .map((entry) => entry.actualAmount),
+    );
+    const accountCashIncome = sumAmounts(
+      actualEntries
+        .filter(
+          (entry) => entry.kind === "INCOME" && entry.channel === "ACCOUNT",
+        )
+        .map((entry) => entry.actualAmount),
+    );
     const expectedIncome = expectedIncomeWithRecurrences;
     const realizedIncome = realizedIncomeWithRecurrences;
     const hasAnyData = [
@@ -646,6 +700,9 @@ export class FinancialService {
       realizedIncome,
       expectedExpenses,
       realizedExpenses,
+      realizedCardSpending,
+      accountCashOutflow,
+      difference(accountCashIncome, accountCashOutflow),
     ].some((value) => value !== null);
     const undatedRecurringRealizations = 0;
 
@@ -656,6 +713,9 @@ export class FinancialService {
         realizedIncome,
         expectedExpenses,
         realizedExpenses,
+        realizedCardSpending,
+        accountCashOutflow,
+        accountCashBalance: difference(accountCashIncome, accountCashOutflow),
         expectedBalance: difference(expectedIncome, expectedExpenses),
         recordedBalance: difference(realizedIncome, realizedExpenses),
         undatedRecurringRealizations,
@@ -665,6 +725,7 @@ export class FinancialService {
       },
       close,
       entries: currentEntries,
+      statementCoverage,
       history: {
         months: history,
         completeness: "recorded_only" as const,

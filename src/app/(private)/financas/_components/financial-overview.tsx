@@ -5,6 +5,7 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
 import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
+import { FinancialCardSettlementReview } from "@/app/(private)/financas/_components/financial-card-settlement-review";
 import {
   FinancialMonthClose,
   type FinancialMonthClose as FinancialMonthCloseData,
@@ -36,6 +37,9 @@ type Entry = {
   categoryId: string;
   categoryName: string;
   recurrenceId?: string | null;
+  channel?: "MANUAL" | "ACCOUNT" | "CARD";
+  sourceCategory?: string | null;
+  cardSettlementStatus?: "AGGREGATE" | "LINKED" | "NOT_RELATED" | null;
   expectedAmount: string | null;
   expectedDate: string | null;
   actualAmount: string | null;
@@ -71,6 +75,9 @@ type HistoryMonth = {
   realizedIncome: string | null;
   expectedExpenses: string | null;
   realizedExpenses: string | null;
+  realizedCardSpending: string | null;
+  accountCashOutflow: string | null;
+  accountCashBalance: string | null;
   recordedBalance: string | null;
   completeness: "recorded_only";
 };
@@ -80,12 +87,21 @@ type Overview = {
     realizedIncome: string | null;
     expectedExpenses: string | null;
     realizedExpenses: string | null;
+    realizedCardSpending: string | null;
+    accountCashOutflow: string | null;
+    accountCashBalance: string | null;
     expectedBalance: string | null;
     recordedBalance: string | null;
     undatedRecurringRealizations: number;
     completeness: "recorded_only" | "no_data";
   };
   entries: Entry[];
+  statementCoverage: Array<{
+    source: "ACCOUNT" | "CARD";
+    coverageStart: string | null;
+    coverageEnd: string | null;
+    importedAt: string;
+  }>;
   history: {
     months: HistoryMonth[];
     completeness: "recorded_only";
@@ -94,6 +110,10 @@ type Overview = {
   close: FinancialMonthCloseData | null;
   categories: Category[];
 };
+type CompleteStatementCoverage = Omit<
+  Overview["statementCoverage"][number],
+  "coverageStart" | "coverageEnd"
+> & { coverageStart: string; coverageEnd: string };
 type RecurrenceOverview = {
   recurrences: Recurrence[];
   recurrenceOccurrences: Occurrence[];
@@ -120,6 +140,10 @@ const monthShift = (value: string, offset: number) => {
     .toISOString()
     .slice(0, 7);
 };
+const dateLabel = (value: string) =>
+  new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(
+    new Date(`${value}T00:00:00Z`),
+  );
 const invalidateFinances = (client: ReturnType<typeof useQueryClient>) =>
   client.invalidateQueries({ queryKey: queryKeys.finances.all });
 
@@ -162,6 +186,21 @@ export function FinancialOverview() {
       ),
   });
   const data = overview.data;
+  const latestCoverage = new Map<
+    "ACCOUNT" | "CARD",
+    CompleteStatementCoverage
+  >();
+  for (const coverage of data?.statementCoverage ?? []) {
+    const { coverageStart, coverageEnd } = coverage;
+    if (coverageStart === null || coverageEnd === null) continue;
+    const current = latestCoverage.get(coverage.source);
+    if (!current || coverage.importedAt > current.importedAt)
+      latestCoverage.set(coverage.source, {
+        ...coverage,
+        coverageStart,
+        coverageEnd,
+      });
+  }
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -252,6 +291,19 @@ export function FinancialOverview() {
         </Card>
       ) : (
         <>
+          {latestCoverage.size > 0 && (
+            <p className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
+              Datas observadas nos arquivos mais recentes:{" "}
+              {[...latestCoverage.values()]
+                .map((coverage) => {
+                  const label = coverage.source === "CARD" ? "Cartão" : "Conta";
+                  const start = dateLabel(coverage.coverageStart);
+                  const end = dateLabel(coverage.coverageEnd);
+                  return `${label}: ${start === end ? start : `${start} a ${end}`}`;
+                })
+                .join(" · ")}
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[
               {
@@ -270,9 +322,27 @@ export function FinancialOverview() {
                 tone: "text-status-danger border-l-status-danger",
               },
               {
-                label: "Saídas realizadas",
+                label: "Gastos realizados",
                 value: data?.summary.realizedExpenses,
                 tone: "text-status-danger border-l-status-danger",
+              },
+              {
+                label: "Compras no cartão",
+                value: data?.summary.realizedCardSpending,
+                tone: "text-status-danger border-l-status-danger",
+              },
+              {
+                label: "Saídas da conta",
+                value: data?.summary.accountCashOutflow,
+                tone: "text-status-danger border-l-status-danger",
+              },
+              {
+                label: "Fluxo líquido das contas",
+                value: data?.summary.accountCashBalance,
+                tone:
+                  Number(data?.summary.accountCashBalance) < 0
+                    ? "text-status-danger border-l-status-danger"
+                    : "text-foreground border-l-border",
               },
               {
                 label: "Saldo previsto",
@@ -303,10 +373,34 @@ export function FinancialOverview() {
                       bancária.
                     </p>
                   )}
+                  {label === "Gastos realizados" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Gastos de conta e compras de cartão, sem duplicar faturas
+                      conferidas.
+                    </p>
+                  )}
+                  {label === "Compras no cartão" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Compras pela data da compra; não alteram o fluxo da conta.
+                    </p>
+                  )}
+                  {label === "Saídas da conta" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Apenas saídas importadas de extratos de conta; não soma
+                      compras do cartão nem lançamentos manuais.
+                    </p>
+                  )}
+                  {label === "Fluxo líquido das contas" && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Entradas menos saídas dos extratos de conta; não é saldo
+                      bancário e exclui lançamentos manuais e compras do cartão.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
+          <FinancialCardSettlementReview readOnly={!canEdit} />
           <FinancialMonthClose
             month={month}
             close={data?.close ?? null}
