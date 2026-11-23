@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   financialEntries,
   financialStatementCategoryRules,
@@ -21,6 +21,22 @@ function duplicateKey(row: {
   description: string;
   actualDate: string;
   actualAmount: number | string;
+  accountAlias?: string | null;
+}) {
+  return [
+    row.accountAlias?.trim().toLocaleLowerCase("pt-BR") ?? "<unknown-account>",
+    row.kind,
+    row.actualDate,
+    Number(row.actualAmount).toFixed(2),
+    normalizeStatementDescription(row.description),
+  ].join("|");
+}
+
+function duplicateFingerprint(row: {
+  kind: string;
+  description: string;
+  actualDate: string;
+  actualAmount: number | string;
 }) {
   return [
     row.kind,
@@ -30,7 +46,32 @@ function duplicateKey(row: {
   ].join("|");
 }
 
+function isLikelyReversal(description: string) {
+  return /\b(?:ESTORNO|ESTORNADO|DEVOLUCAO|DEVOLVIDO|REEMBOLSO)\b/.test(
+    description
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleUpperCase("pt-BR"),
+  );
+}
+
 export class FinancialStatementImportRepository {
+  async listAccountAliases() {
+    const userId = requireDataOwnerId();
+    const rows = await getDatabaseClient()
+      .selectDistinct({ accountAlias: financialStatementImports.accountAlias })
+      .from(financialStatementImports)
+      .where(
+        and(
+          eq(financialStatementImports.userId, userId),
+          eq(financialStatementImports.source, "ACCOUNT"),
+        ),
+      );
+    return rows
+      .map((row) => row.accountAlias)
+      .filter((alias): alias is string => Boolean(alias));
+  }
+
   async listSavedCategoryRules(
     choices: Array<{ kind: FinancialKind; descriptionKey: string }>,
   ) {
@@ -93,6 +134,80 @@ export class FinancialStatementImportRepository {
     const dates = [...new Set(rows.map((row) => row.actualDate))];
     const existing = await getDatabaseClient()
       .select({
+        id: financialEntries.id,
+        kind: financialEntries.kind,
+        description: financialEntries.description,
+        actualDate: financialEntries.actualDate,
+        actualAmount: financialEntries.actualAmount,
+        accountAlias: financialEntries.accountAlias,
+      })
+      .from(financialEntries)
+      .where(
+        and(
+          eq(financialEntries.userId, userId),
+          eq(financialEntries.channel, "ACCOUNT"),
+          inArray(financialEntries.actualDate, dates),
+          ne(financialEntries.channel, "CARD"),
+        ),
+      );
+    const remaining = new Map<
+      string,
+      Array<{ id: string; accountAlias: string }>
+    >();
+    for (const row of existing) {
+      const key = duplicateFingerprint({
+        kind: row.kind,
+        description: row.description,
+        actualDate: row.actualDate!,
+        actualAmount: row.actualAmount!,
+      });
+      remaining.set(key, [
+        ...(remaining.get(key) ?? []),
+        { id: row.id, accountAlias: row.accountAlias ?? "" },
+      ]);
+    }
+    const duplicates: Array<{
+      sourceRow: number;
+      accountAliases: string[];
+      accountDuplicateCandidates: Array<{
+        entryId: string;
+        accountAlias: string;
+      }>;
+    }> = [];
+    for (const row of rows) {
+      const key = duplicateFingerprint(row);
+      const aliases = remaining.get(key) ?? [];
+      if (aliases.length === 0) continue;
+      duplicates.push({
+        sourceRow: row.sourceRow,
+        accountAliases: [aliases[0].accountAlias],
+        accountDuplicateCandidates: [
+          {
+            entryId: aliases[0].id,
+            accountAlias: aliases[0].accountAlias,
+          },
+        ],
+      });
+      remaining.set(key, aliases.slice(1));
+    }
+    return duplicates;
+  }
+
+  async findManualDuplicateCandidates(
+    rows: Array<{
+      sourceRow: number;
+      kind: FinancialKind;
+      description: string;
+      actualDate: string;
+      actualAmount: number;
+    }>,
+  ) {
+    if (rows.length === 0) return [];
+    const userId = requireDataOwnerId();
+    const dates = [...new Set(rows.map((row) => row.actualDate))];
+    const existing = await getDatabaseClient()
+      .select({
+        id: financialEntries.id,
         kind: financialEntries.kind,
         description: financialEntries.description,
         actualDate: financialEntries.actualDate,
@@ -102,29 +217,29 @@ export class FinancialStatementImportRepository {
       .where(
         and(
           eq(financialEntries.userId, userId),
+          eq(financialEntries.channel, "MANUAL"),
           inArray(financialEntries.actualDate, dates),
-          ne(financialEntries.channel, "CARD"),
         ),
       );
-    const remaining = new Map<string, number>();
-    for (const row of existing) {
-      const key = duplicateKey({
-        kind: row.kind,
-        description: row.description,
-        actualDate: row.actualDate!,
-        actualAmount: row.actualAmount!,
-      });
-      remaining.set(key, (remaining.get(key) ?? 0) + 1);
-    }
-    const duplicates: number[] = [];
-    for (const row of rows) {
-      const key = duplicateKey(row);
-      const count = remaining.get(key) ?? 0;
-      if (count === 0) continue;
-      duplicates.push(row.sourceRow);
-      remaining.set(key, count - 1);
-    }
-    return duplicates;
+    return rows.flatMap((row) => {
+      const candidates = existing.filter(
+        (entry) =>
+          entry.kind === row.kind &&
+          entry.actualDate === row.actualDate &&
+          Number(entry.actualAmount) === row.actualAmount,
+      );
+      return candidates.length
+        ? [
+            {
+              sourceRow: row.sourceRow,
+              candidates: candidates.map((entry) => ({
+                id: entry.id,
+                description: entry.description,
+              })),
+            },
+          ]
+        : [];
+    });
   }
 
   async confirm(input: StatementConfirmInput) {
@@ -150,10 +265,13 @@ export class FinancialStatementImportRepository {
       const existingEntries = dates.length
         ? await transaction
             .select({
+              id: financialEntries.id,
+              channel: financialEntries.channel,
               kind: financialEntries.kind,
               description: financialEntries.description,
               actualDate: financialEntries.actualDate,
               actualAmount: financialEntries.actualAmount,
+              accountAlias: financialEntries.accountAlias,
             })
             .from(financialEntries)
             .where(
@@ -165,19 +283,35 @@ export class FinancialStatementImportRepository {
             )
         : [];
       const duplicateCounts = new Map<string, number>();
+      const accountCandidates = new Map<string, typeof existingEntries>();
       for (const entry of existingEntries) {
-        const key = duplicateKey({
+        if (entry.channel !== "ACCOUNT") continue;
+        const fingerprint = duplicateKey({
           kind: entry.kind,
           description: entry.description,
           actualDate: entry.actualDate!,
           actualAmount: entry.actualAmount!,
         });
-        duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+        accountCandidates.set(fingerprint, [
+          ...(accountCandidates.get(fingerprint) ?? []),
+          entry,
+        ]);
+        if (entry.accountAlias?.trim()) {
+          const key = duplicateKey({
+            kind: entry.kind,
+            description: entry.description,
+            actualDate: entry.actualDate!,
+            actualAmount: entry.actualAmount!,
+            accountAlias: entry.accountAlias.trim().toLocaleLowerCase("pt-BR"),
+          });
+          duplicateCounts.set(key, (duplicateCounts.get(key) ?? 0) + 1);
+        }
       }
       const [existingImport] = await transaction
         .select({
           id: financialStatementImports.id,
           source: financialStatementImports.source,
+          accountAlias: financialStatementImports.accountAlias,
         })
         .from(financialStatementImports)
         .where(
@@ -195,6 +329,7 @@ export class FinancialStatementImportRepository {
               userId,
               fileHash: input.fileHash,
               source,
+              accountAlias: input.accountAlias?.trim() || null,
               coverageStart,
               coverageEnd,
             })
@@ -202,18 +337,21 @@ export class FinancialStatementImportRepository {
             .returning({
               id: financialStatementImports.id,
               source: financialStatementImports.source,
+              accountAlias: financialStatementImports.accountAlias,
             });
       const [resolvedImport] = statementImport
         ? [
             {
               id: statementImport.id,
               source: statementImport.source ?? source,
+              accountAlias: statementImport.accountAlias,
             },
           ]
         : await transaction
             .select({
               id: financialStatementImports.id,
               source: financialStatementImports.source,
+              accountAlias: financialStatementImports.accountAlias,
             })
             .from(financialStatementImports)
             .where(
@@ -230,6 +368,38 @@ export class FinancialStatementImportRepository {
           "Este arquivo já foi importado com outra origem.",
           409,
         );
+      }
+      if (
+        existingImport &&
+        input.accountAlias?.trim() &&
+        !resolvedImport.accountAlias
+      ) {
+        await transaction
+          .update(financialStatementImports)
+          .set({ accountAlias: input.accountAlias.trim() })
+          .where(eq(financialStatementImports.id, resolvedImport.id));
+        const importedEntryRows = await transaction
+          .select({ entryId: financialStatementImportRows.entryId })
+          .from(financialStatementImportRows)
+          .where(
+            and(
+              eq(financialStatementImportRows.userId, userId),
+              eq(financialStatementImportRows.importId, resolvedImport.id),
+            ),
+          );
+        for (const importedRow of importedEntryRows) {
+          if (!importedRow.entryId) continue;
+          await transaction
+            .update(financialEntries)
+            .set({ accountAlias: input.accountAlias.trim() })
+            .where(
+              and(
+                eq(financialEntries.userId, userId),
+                eq(financialEntries.id, importedRow.entryId),
+                isNull(financialEntries.accountAlias),
+              ),
+            );
+        }
       }
       let importedCount = 0;
       let alreadyImportedCount = 0;
@@ -252,18 +422,103 @@ export class FinancialStatementImportRepository {
           alreadyImportedCount += 1;
           continue;
         }
-        const key = duplicateKey(row);
+        const matchingManualEntries = existingEntries.filter(
+          (entry) =>
+            entry.channel === "MANUAL" &&
+            entry.kind === row.kind &&
+            entry.actualDate === row.actualDate &&
+            Number(entry.actualAmount) === row.actualAmount,
+        );
+        if (matchingManualEntries.length > 0) {
+          const selectedManual = matchingManualEntries.find(
+            (entry) => entry.id === row.manualDuplicateEntryId,
+          );
+          if (row.manualDuplicateEntryId && !selectedManual) {
+            throw new ApplicationError(
+              "A possível duplicidade mudou. Revise o extrato novamente.",
+              409,
+            );
+          }
+          if (!row.confirmedDistinct && !selectedManual) {
+            throw new ApplicationError(
+              "Revise a possível duplicidade antes de confirmar a importação.",
+              409,
+            );
+          }
+          if (selectedManual) {
+            if (
+              input.accountAlias?.trim() &&
+              selectedManual.accountAlias === null
+            ) {
+              await transaction
+                .update(financialEntries)
+                .set({ accountAlias: input.accountAlias.trim() })
+                .where(
+                  and(
+                    eq(financialEntries.userId, userId),
+                    eq(financialEntries.id, selectedManual.id),
+                    isNull(financialEntries.accountAlias),
+                  ),
+                );
+            }
+            await transaction
+              .update(financialStatementImportRows)
+              .set({ entryId: selectedManual.id })
+              .where(eq(financialStatementImportRows.id, reservedRow.id));
+            duplicateCount += 1;
+            continue;
+          }
+        }
+        const fingerprint = duplicateKey(row);
+        const candidates = accountCandidates.get(fingerprint) ?? [];
+        const alias = input.accountAlias?.trim().toLocaleLowerCase("pt-BR");
+        if (row.accountDuplicateEntryId) {
+          const selectedEntry = candidates.find(
+            (candidate) => candidate.id === row.accountDuplicateEntryId,
+          );
+          if (
+            !selectedEntry ||
+            selectedEntry.accountAlias?.trim() ||
+            !input.accountAlias?.trim()
+          ) {
+            throw new ApplicationError(
+              "A possível duplicidade mudou. Confira a conta e revise o extrato novamente.",
+              409,
+            );
+          }
+          await transaction
+            .update(financialEntries)
+            .set({ accountAlias: input.accountAlias.trim() })
+            .where(
+              and(
+                eq(financialEntries.userId, userId),
+                eq(financialEntries.id, selectedEntry.id),
+                isNull(financialEntries.accountAlias),
+              ),
+            );
+          await transaction
+            .update(financialStatementImportRows)
+            .set({ entryId: selectedEntry.id })
+            .where(eq(financialStatementImportRows.id, reservedRow.id));
+          duplicateCount += 1;
+          continue;
+        }
+        const key = duplicateKey({ ...row, accountAlias: alias });
         const existingCount = duplicateCounts.get(key) ?? 0;
         if (existingCount > 0) {
           duplicateCounts.set(key, existingCount - 1);
           duplicateCount += 1;
           continue;
         }
-        if (row.possibleDuplicate)
+        const hasAmbiguousAccountCandidate =
+          candidates.length > 0 &&
+          (!alias || candidates.some((entry) => !entry.accountAlias?.trim()));
+        if (hasAmbiguousAccountCandidate && !row.confirmedDistinct) {
           throw new ApplicationError(
-            "Os lançamentos repetidos mudaram desde a revisão. Confira o extrato novamente.",
+            "Confira a conta e revise a possível duplicidade antes de importar.",
             409,
           );
+        }
         const categoryId = row.categoryId;
         if (!categoryId)
           throw new ApplicationError(
@@ -279,6 +534,11 @@ export class FinancialStatementImportRepository {
             categoryId,
             recurrenceId: null,
             channel: "ACCOUNT",
+            accountAlias: input.accountAlias?.trim() || null,
+            reviewStatus:
+              row.kind === "INCOME" && isLikelyReversal(row.description)
+                ? "REVERSAL_PENDING"
+                : "NONE",
             sourceCategory: null,
             cardSettlementStatus: null,
             expectedAmount: null,
@@ -327,7 +587,11 @@ export class FinancialStatementImportRepository {
         userId,
         importedDates,
       );
-      return { importedCount, alreadyImportedCount, duplicateCount };
+      return {
+        importedCount,
+        alreadyImportedCount,
+        duplicateCount,
+      };
     });
   }
 }

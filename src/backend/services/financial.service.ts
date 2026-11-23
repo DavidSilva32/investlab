@@ -6,6 +6,7 @@ import {
   type FinancialEntryInput as RepositoryFinancialEntryInput,
 } from "@/backend/repositories/financial.repository";
 import { financialRecurrencesRepository } from "@/backend/repositories/financial-recurrences.repository";
+import { financialEntryRelationsRepository } from "@/backend/repositories/financial-entry-relations.repository";
 import {
   financialMonthCloseRepository,
   type FinancialCloseTotals,
@@ -136,6 +137,16 @@ function sumAmounts(values: Array<string | null | undefined>) {
   return formatCents(
     amounts.reduce((total, value) => total + parseCents(value), 0n),
   );
+}
+
+function subtractAmount(base: string | null, reductionCents: bigint) {
+  if (base === null)
+    return reductionCents > 0n ? formatCents(-reductionCents) : null;
+  return formatCents(parseCents(base) - reductionCents);
+}
+
+function isPendingReversal(entry: { reviewStatus?: string | null }) {
+  return entry.reviewStatus === "REVERSAL_PENDING";
 }
 
 function difference(left: string | null, right: string | null) {
@@ -358,39 +369,23 @@ export class FinancialService {
     }
 
     const overview = await this.getMonthlyOverview(month);
-    const currentRange = monthRange(month);
-    const actualOnlyAmounts =
-      month === currentFinancialMonth()
-        ? overview.entries.reduce(
-            (amounts, entry) => {
-              if (
-                (entry.kind !== "INCOME" && entry.kind !== "EXPENSE") ||
-                entry.expectedAmount !== null ||
-                entry.actualAmount === null ||
-                !isWithin(
-                  entry.actualDate,
-                  currentRange.startDate,
-                  currentRange.endDate,
-                )
-              ) {
-                return amounts;
-              }
-              const actualCents = parseCents(entry.actualAmount);
-              amounts[entry.kind] += actualCents;
-              return amounts;
-            },
-            { INCOME: 0n, EXPENSE: 0n },
-          )
-        : { INCOME: 0n, EXPENSE: 0n };
     const addActualOnly = (expected: string | null, actualOnly: bigint) =>
       expected === null ? null : (parseCents(expected) + actualOnly).toString();
+    const simulationActualOnly =
+      month === currentFinancialMonth()
+        ? overview.simulationActualOnly
+        : { income: null, expenses: null };
     const baselineIncomeCents = addActualOnly(
       overview.summary.expectedIncome,
-      actualOnlyAmounts.INCOME,
+      simulationActualOnly.income === null
+        ? 0n
+        : parseCents(simulationActualOnly.income),
     );
     const baselineExpenseCents = addActualOnly(
       overview.summary.expectedExpenses,
-      actualOnlyAmounts.EXPENSE,
+      simulationActualOnly.expenses === null
+        ? 0n
+        : parseCents(simulationActualOnly.expenses),
     );
     const baseBalanceInCents =
       baselineIncomeCents === null || baselineExpenseCents === null
@@ -433,9 +428,17 @@ export class FinancialService {
   async getMonthlyOverview(monthValue: string | null | undefined) {
     const month = parseMonth(monthValue);
     const historyEndDate = month.endDate;
+    const nextMonthEndDate = new Date(
+      Date.UTC(month.year, month.monthIndex + 2, 0),
+    )
+      .toISOString()
+      .slice(0, 10);
     const [loadedEntries, recurrences, savedOccurrences, categories, close] =
       await Promise.all([
-        financialRepository.listEntries(month.historyStartDate, historyEndDate),
+        financialRepository.listEntries(
+          month.historyStartDate,
+          nextMonthEndDate,
+        ),
         financialRecurrencesRepository.listRecurrences(),
         financialRecurrencesRepository.listOccurrencesForFinancialPeriod(
           month.historyStartDate,
@@ -445,6 +448,49 @@ export class FinancialService {
         financialMonthCloseRepository.getCurrent(monthValue!),
       ]);
     const entries = loadedEntries.filter((entry) => entry.channel !== "CARD");
+    const relationships =
+      await financialEntryRelationsRepository.listForEntries(
+        entries.map((entry) => entry.id),
+      );
+    const transferEntryIds = new Set(
+      relationships
+        .filter((relation) => relation.kind === "TRANSFER")
+        .flatMap((relation) => [relation.entryId, relation.relatedEntryId]),
+    );
+    const reversalCredits = relationships.filter(
+      (relation) => relation.kind === "REVERSAL",
+    );
+    const isIncludedIncome = (entry: (typeof entries)[number]) =>
+      entry.kind === "INCOME" &&
+      !isPendingReversal(entry) &&
+      !transferEntryIds.has(entry.id) &&
+      !reversalCredits.some((relation) => relation.entryId === entry.id);
+    const isIncludedExpense = (entry: (typeof entries)[number]) =>
+      entry.kind === "EXPENSE" && !transferEntryIds.has(entry.id);
+    const isIncludedExpectedIncome = (entry: (typeof entries)[number]) =>
+      entry.kind === "INCOME" && !transferEntryIds.has(entry.id);
+    const isIncludedExpectedExpense = (entry: (typeof entries)[number]) =>
+      entry.kind === "EXPENSE" && !transferEntryIds.has(entry.id);
+    const reversalCentsByExpenseMonth = new Map<string, bigint>();
+    for (const relation of reversalCredits) {
+      if (!relation.relatedDate || !relation.entryAmount) continue;
+      const monthKey = relation.relatedDate.slice(0, 7);
+      reversalCentsByExpenseMonth.set(
+        monthKey,
+        (reversalCentsByExpenseMonth.get(monthKey) ?? 0n) +
+          parseCents(relation.entryAmount),
+      );
+    }
+    const realizedExpenseTotal = (
+      monthKey: string,
+      actual: Array<(typeof entries)[number]>,
+    ) =>
+      subtractAmount(
+        sumAmounts(
+          actual.filter(isIncludedExpense).map((entry) => entry.actualAmount),
+        ),
+        reversalCentsByExpenseMonth.get(monthKey) ?? 0n,
+      );
     const currentRange = { startDate: month.startDate, endDate: month.endDate };
     const occurrenceByKey = new Map(
       savedOccurrences.map((occurrence) => [
@@ -537,6 +583,143 @@ export class FinancialService {
           currentRange.endDate,
         ),
     );
+    const linkedTransferEntryIds = new Set(
+      relationships
+        .filter((relation) => relation.kind === "TRANSFER")
+        .flatMap((relation) => [relation.entryId, relation.relatedEntryId]),
+    );
+    const transferCandidates: Array<{
+      entryId: string;
+      relatedEntryId: string;
+      entryDescription: string;
+      relatedDescription: string;
+      entryAccount: string;
+      relatedAccount: string;
+      actualAmount: string;
+      entryDate: string;
+      relatedDate: string;
+    }> = [];
+    const monthOrdinal = (date: string) => {
+      const [year, monthNumber] = date.slice(0, 7).split("-").map(Number);
+      return year * 12 + monthNumber;
+    };
+    const transferPairs = new Set<string>();
+    for (const entry of currentEntries) {
+      if (
+        !entry.actualAmount ||
+        !entry.actualDate ||
+        !entry.accountAlias ||
+        isPendingReversal(entry) ||
+        linkedTransferEntryIds.has(entry.id)
+      )
+        continue;
+      for (const match of entries) {
+        const pairKey = [entry.id, match.id].sort().join(":");
+        if (
+          match.id === entry.id ||
+          transferPairs.has(pairKey) ||
+          !match.actualDate ||
+          !entry.actualDate ||
+          Math.abs(
+            monthOrdinal(match.actualDate) - monthOrdinal(entry.actualDate),
+          ) > 1 ||
+          match.kind === entry.kind ||
+          isPendingReversal(match) ||
+          match.actualAmount !== entry.actualAmount ||
+          !match.accountAlias ||
+          match.accountAlias.trim().toLocaleLowerCase("pt-BR") ===
+            entry.accountAlias.trim().toLocaleLowerCase("pt-BR") ||
+          linkedTransferEntryIds.has(match.id)
+        )
+          continue;
+        transferPairs.add(pairKey);
+        const outgoing = entry.kind === "EXPENSE" ? entry : match;
+        const incoming = entry.kind === "INCOME" ? entry : match;
+        transferCandidates.push({
+          entryId: outgoing.id,
+          relatedEntryId: incoming.id,
+          entryDescription: outgoing.description,
+          relatedDescription: incoming.description,
+          entryAccount: outgoing.accountAlias!,
+          relatedAccount: incoming.accountAlias!,
+          actualAmount: outgoing.actualAmount!,
+          entryDate: outgoing.actualDate!,
+          relatedDate: incoming.actualDate!,
+        });
+      }
+    }
+    const reversedByExpenseId = new Map<string, bigint>();
+    for (const relation of reversalCredits) {
+      if (!relation.entryAmount) continue;
+      reversedByExpenseId.set(
+        relation.relatedEntryId,
+        (reversedByExpenseId.get(relation.relatedEntryId) ?? 0n) +
+          parseCents(relation.entryAmount),
+      );
+    }
+    const reversalReviews = currentEntries
+      .filter(isPendingReversal)
+      .map((credit) => {
+        const possibleExpenses = entries
+          .filter(
+            (expense) =>
+              expense.kind === "EXPENSE" &&
+              !transferEntryIds.has(expense.id) &&
+              expense.actualAmount &&
+              expense.actualDate &&
+              credit.actualDate &&
+              expense.actualDate <= credit.actualDate,
+          )
+          .map((expense) => {
+            const remaining =
+              parseCents(expense.actualAmount!) -
+              (reversedByExpenseId.get(expense.id) ?? 0n);
+            return { expense, remaining };
+          })
+          .filter(({ remaining }) => remaining > 0n)
+          .map(({ expense, remaining }) => ({
+            entryId: expense.id,
+            description: expense.description,
+            actualDate: expense.actualDate!,
+            remainingAmount: formatCents(remaining),
+          }));
+        const matchingDescription = (value: string) =>
+          value
+            .normalize("NFD")
+            .replace(/\p{Diacritic}/gu, "")
+            .toLocaleLowerCase("pt-BR")
+            .replace(
+              /\b(estorno|estornado|devolucao|devolvido|reembolso|reembolsado|credito|compra|cartao|pix)\b/g,
+              " ",
+            )
+            .split(/[^a-z0-9]+/)
+            .filter((token) => token.length >= 4);
+        const creditTokens = new Set(matchingDescription(credit.description));
+        const suggestedIds = new Set(
+          possibleExpenses
+            .filter((expense) =>
+              matchingDescription(expense.description).some((token) =>
+                creditTokens.has(token),
+              ),
+            )
+            .map((expense) => expense.entryId),
+        );
+        const candidates = possibleExpenses
+          .filter((expense) => suggestedIds.has(expense.entryId))
+          .filter(
+            (expense) =>
+              parseCents(expense.remainingAmount) >=
+              parseCents(credit.actualAmount ?? "0"),
+          );
+        return {
+          entryId: credit.id,
+          description: credit.description,
+          actualAmount: credit.actualAmount,
+          actualDate: credit.actualDate,
+          candidates,
+          expenses: possibleExpenses,
+        };
+      });
     const history = monthKeysThrough(monthValue!).map((historyMonth) => {
       const range = monthRange(historyMonth);
       const expectedEntries = entries.filter((entry) =>
@@ -558,7 +741,7 @@ export class FinancialService {
       );
       const expectedIncome = sumAmounts([
         ...expectedEntries
-          .filter((entry) => entry.kind === "INCOME")
+          .filter(isIncludedExpectedIncome)
           .map((entry) => entry.expectedAmount),
         ...expectedIncomeOccurrences.map(
           (occurrence) => occurrence.expectedAmount,
@@ -566,22 +749,20 @@ export class FinancialService {
       ]);
       const realizedIncome = sumAmounts([
         ...actualEntries
-          .filter((entry) => entry.kind === "INCOME")
+          .filter(isIncludedIncome)
           .map((entry) => entry.actualAmount),
       ]);
       const expectedExpenses = sumAmounts([
         ...expectedEntries
-          .filter((entry) => entry.kind === "EXPENSE")
+          .filter(isIncludedExpectedExpense)
           .map((entry) => entry.expectedAmount),
         ...expectedExpenseOccurrences.map(
           (occurrence) => occurrence.expectedAmount,
         ),
       ]);
-      const spendEntries = actualEntries.filter(
-        (entry) => entry.kind === "EXPENSE",
-      );
-      const realizedExpenses = sumAmounts(
-        spendEntries.map((entry) => entry.actualAmount),
+      const realizedExpenses = realizedExpenseTotal(
+        historyMonth,
+        actualEntries,
       );
       return {
         month: historyMonth,
@@ -617,7 +798,7 @@ export class FinancialService {
     );
     const expectedExpenses = sumAmounts([
       ...expectedEntries
-        .filter((entry) => entry.kind === "EXPENSE")
+        .filter(isIncludedExpectedExpense)
         .map((entry) => entry.expectedAmount),
       ...expectedOccurrences
         .filter((occurrence) => occurrence.kind === "EXPENSE")
@@ -625,7 +806,7 @@ export class FinancialService {
     ]);
     const expectedIncomeWithRecurrences = sumAmounts([
       ...expectedEntries
-        .filter((entry) => entry.kind === "INCOME")
+        .filter(isIncludedExpectedIncome)
         .map((entry) => entry.expectedAmount),
       ...expectedOccurrences
         .filter((occurrence) => occurrence.kind === "INCOME")
@@ -633,15 +814,27 @@ export class FinancialService {
     ]);
     const realizedIncomeWithRecurrences = sumAmounts([
       ...actualEntries
-        .filter((entry) => entry.kind === "INCOME")
+        .filter(isIncludedIncome)
         .map((entry) => entry.actualAmount),
     ]);
-    const spendEntries = actualEntries.filter(
-      (entry) => entry.kind === "EXPENSE",
-    );
-    const realizedExpenses = sumAmounts(
-      spendEntries.map((entry) => entry.actualAmount),
-    );
+    const realizedExpenses = realizedExpenseTotal(monthValue!, actualEntries);
+    const simulationActualOnly = {
+      income: sumAmounts(
+        actualEntries
+          .filter(isIncludedIncome)
+          .filter((entry) => entry.expectedAmount === null)
+          .map((entry) => entry.actualAmount),
+      ),
+      expenses: subtractAmount(
+        sumAmounts(
+          actualEntries
+            .filter(isIncludedExpense)
+            .filter((entry) => entry.expectedAmount === null)
+            .map((entry) => entry.actualAmount),
+        ),
+        reversalCentsByExpenseMonth.get(monthValue!) ?? 0n,
+      ),
+    };
     const expectedIncome = expectedIncomeWithRecurrences;
     const realizedIncome = realizedIncomeWithRecurrences;
     const hasAnyData = [
@@ -668,6 +861,9 @@ export class FinancialService {
       },
       close,
       entries: currentEntries,
+      transferCandidates,
+      reversalReviews,
+      simulationActualOnly,
       history: {
         months: history,
         completeness: "recorded_only" as const,

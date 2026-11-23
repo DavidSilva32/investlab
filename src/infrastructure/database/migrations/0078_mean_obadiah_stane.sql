@@ -1,0 +1,2 @@
+ALTER TABLE "financial_entries" DROP CONSTRAINT "financial_entries_review_status_check";--> statement-breakpoint
+ALTER TABLE "financial_entries" ADD CONSTRAINT "financial_entries_review_status_check" CHECK ("financial_entries"."reviewStatus" in ('NONE', 'REVERSAL_PENDING', 'REVERSAL_DISMISSED'));

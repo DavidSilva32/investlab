@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   simulateMonthlyCapacity: vi.fn(),
   closeMonth: vi.fn(),
   info: vi.fn(),
+  createEntryRelation: vi.fn(),
 }));
 
 vi.mock("@/backend/services/financial.service", () => ({
@@ -22,6 +23,11 @@ vi.mock("@/backend/services/financial.service", () => ({
     getMonthlyOverview: state.getMonthlyOverview,
     simulateMonthlyCapacity: state.simulateMonthlyCapacity,
     closeMonth: state.closeMonth,
+  },
+}));
+vi.mock("@/backend/services/financial-entry-relations.service", () => ({
+  financialEntryRelationsService: {
+    create: state.createEntryRelation,
   },
 }));
 vi.mock("@/infrastructure/logging/logger", () => ({
@@ -145,5 +151,52 @@ describe("FinancialController", () => {
         status: "closed",
       }),
     );
+  });
+
+  it("creates and logs an explicit relation between financial entries", async () => {
+    state.createEntryRelation.mockResolvedValue({
+      id: "relation-id",
+      kind: "TRANSFER",
+    });
+
+    const response = await controller.createEntryRelation(
+      { kind: "TRANSFER", entryId: "out", relatedEntryId: "in" },
+      "request-relation",
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      id: "relation-id",
+      kind: "TRANSFER",
+      message: "Lançamentos relacionados.",
+    });
+    expect(state.createEntryRelation).toHaveBeenCalledWith({
+      kind: "TRANSFER",
+      entryId: "out",
+      relatedEntryId: "in",
+    });
+    expect(state.info).toHaveBeenCalledWith(
+      "financial_entry_relation_created",
+      expect.objectContaining({
+        requestId: "request-relation",
+        kind: "TRANSFER",
+      }),
+    );
+  });
+
+  it("uses the entry-specific message when dismissing a possible reversal", async () => {
+    state.createEntryRelation.mockResolvedValue({
+      id: "relation-id",
+      kind: "REVERSAL_DISMISSED",
+    });
+
+    const response = await controller.createEntryRelation(
+      { kind: "REVERSAL_DISMISSED", entryId: "credit" },
+      "request-dismiss",
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      message: "O crédito será considerado uma entrada.",
+    });
   });
 });

@@ -14,6 +14,7 @@ const repositories = vi.hoisted(() => ({
   listOccurrencesForFinancialPeriod: vi.fn(),
   getCurrentClose: vi.fn(),
   saveMonthClose: vi.fn(),
+  listRelations: vi.fn(),
 }));
 
 vi.mock("@/backend/repositories/financial.repository", () => ({
@@ -42,6 +43,12 @@ vi.mock("@/backend/repositories/financial-month-close.repository", () => ({
   financialMonthCloseRepository: {
     getCurrent: repositories.getCurrentClose,
     closeMonth: repositories.saveMonthClose,
+  },
+}));
+
+vi.mock("@/backend/repositories/financial-entry-relations.repository", () => ({
+  financialEntryRelationsRepository: {
+    listForEntries: repositories.listRelations,
   },
 }));
 
@@ -91,6 +98,8 @@ function entry(
     expectedDate: string | null;
     actualAmount: string | null;
     actualDate: string | null;
+    accountAlias: string | null;
+    reviewStatus: "NONE" | "REVERSAL_PENDING";
   }> = {},
 ) {
   return {
@@ -107,6 +116,8 @@ function entry(
     expectedDate: "2026-10-10",
     actualAmount: "105.00",
     actualDate: "2026-10-11",
+    accountAlias: null,
+    reviewStatus: "NONE" as const,
     createdAt: new Date("2026-10-01T12:00:00.000Z"),
     updatedAt: new Date("2026-10-11T12:00:00.000Z"),
     ...overrides,
@@ -209,6 +220,7 @@ describe("FinancialService", () => {
         totals: await loadTotals(),
       }),
     );
+    repositories.listRelations.mockResolvedValue([]);
   });
 
   it("lists categories and validates the month when listing entries", async () => {
@@ -992,6 +1004,14 @@ describe("FinancialService", () => {
         actualAmount: "125.50",
         actualDate: "2026-11-12",
       }),
+      entry({
+        id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        kind: "INCOME",
+        expectedAmount: null,
+        expectedDate: null,
+        actualAmount: "500.00",
+        actualDate: "2026-11-16",
+      }),
     ]);
 
     await expect(
@@ -999,12 +1019,48 @@ describe("FinancialService", () => {
         month: "2026-11",
       }),
     ).resolves.toMatchObject({
-      baselineIncomeCents: "500000",
+      baselineIncomeCents: "550000",
       baselineExpenseCents: "312550",
-      baseBalanceCents: "187450",
+      baseBalanceCents: "237450",
       simulatedBalanceCents: null,
       status: "unavailable",
     });
+  });
+
+  it("keeps a confirmed refund out of actual-only expenses when its base is unavailable", async () => {
+    const expenseId = "11111111-1111-4111-8111-111111111111";
+    const refundId = "22222222-2222-4222-8222-222222222222";
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        id: expenseId,
+        expectedAmount: "100.00",
+        expectedDate: "2026-11-10",
+        actualAmount: "100.00",
+        actualDate: "2026-11-10",
+      }),
+      entry({
+        id: refundId,
+        kind: "INCOME",
+        expectedAmount: null,
+        expectedDate: null,
+        actualAmount: "20.00",
+        actualDate: "2026-11-15",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([
+      {
+        kind: "REVERSAL",
+        entryId: refundId,
+        relatedEntryId: expenseId,
+        entryAmount: "20.00",
+        relatedDate: "2026-11-10",
+      },
+    ]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.simulationActualOnly).toMatchObject({ expenses: "-20.00" });
+    expect(result.summary.realizedExpenses).toBe("80.00");
   });
 
   it("rejects invalid amounts and historical months for capacity simulation", async () => {
@@ -1154,6 +1210,258 @@ describe("FinancialService", () => {
 
     await expect(service.getMonthlyOverview("2026-10")).resolves.toMatchObject({
       summary: { realizedIncome: "-0.01" },
+    });
+  });
+
+  it("excludes confirmed transfers and pending reversals, then offsets linked reversals in the credit month", async () => {
+    const ids = {
+      expense: "11111111-1111-4111-8111-111111111111",
+      transferOut: "22222222-2222-4222-8222-222222222222",
+      transferIn: "33333333-3333-4333-8333-333333333333",
+      pendingRefund: "44444444-4444-4444-8444-444444444444",
+      confirmedRefund: "55555555-5555-4555-8555-555555555555",
+    };
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        id: ids.expense,
+        actualAmount: "100.00",
+        actualDate: "2026-10-10",
+      }),
+      entry({
+        id: ids.transferOut,
+        actualAmount: "50.00",
+        actualDate: "2026-10-15",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: ids.transferIn,
+        kind: "INCOME",
+        actualAmount: "50.00",
+        actualDate: "2026-10-15",
+        accountAlias: "PagBank",
+      }),
+      entry({
+        id: ids.pendingRefund,
+        kind: "INCOME",
+        actualAmount: "10.00",
+        actualDate: "2026-11-20",
+        reviewStatus: "REVERSAL_PENDING",
+      }),
+      entry({
+        id: ids.confirmedRefund,
+        kind: "INCOME",
+        actualAmount: "20.00",
+        actualDate: "2026-11-02",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([
+      {
+        kind: "TRANSFER",
+        entryId: ids.transferOut,
+        relatedEntryId: ids.transferIn,
+        entryAmount: "50.00",
+        entryDate: "2026-10-15",
+        relatedDate: "2026-10-15",
+      },
+      {
+        kind: "REVERSAL",
+        entryId: ids.confirmedRefund,
+        relatedEntryId: ids.expense,
+        entryAmount: "20.00",
+        entryDate: "2026-11-02",
+        relatedDate: "2026-10-10",
+      },
+      {
+        kind: "REVERSAL",
+        entryId: ids.confirmedRefund,
+        relatedEntryId: ids.expense,
+        entryAmount: null,
+        entryDate: null,
+        relatedDate: "2026-10-10",
+      },
+    ]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+    expect(
+      result.history.months.find(({ month }) => month === "2026-10"),
+    ).toMatchObject({ realizedIncome: null, realizedExpenses: "80.00" });
+    expect(result.summary).toMatchObject({
+      realizedIncome: null,
+      realizedExpenses: null,
+    });
+    expect(result.reversalReviews).toEqual([
+      expect.objectContaining({ entryId: ids.pendingRefund }),
+    ]);
+  });
+
+  it("suggests only unpaired equal transfers between different known accounts", async () => {
+    const rows = [
+      entry({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "INCOME",
+        actualAmount: "25.00",
+        actualDate: "2026-11-12",
+        accountAlias: "PagBank",
+      }),
+      entry({
+        id: "22222222-2222-4222-8222-222222222222",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-11-11",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "33333333-3333-4333-8333-333333333333",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-11-10",
+        accountAlias: "PagBank",
+      }),
+      entry({
+        id: "44444444-4444-4444-8444-444444444444",
+        kind: "INCOME",
+        actualAmount: "25.00",
+        actualDate: "2026-11-10",
+        accountAlias: "Citi",
+        reviewStatus: "REVERSAL_PENDING",
+      }),
+      entry({
+        id: "55555555-5555-4555-8555-555555555555",
+        kind: "EXPENSE",
+        actualAmount: "26.00",
+        actualDate: "2026-11-10",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "66666666-6666-4666-8666-666666666666",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-11-10",
+        accountAlias: null,
+      }),
+      entry({
+        id: "77777777-7777-4777-8777-777777777777",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-09-10",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "88888888-8888-4888-8888-888888888888",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: null,
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "99999999-9999-4999-8999-999999999999",
+        kind: "INCOME",
+        actualAmount: null,
+        actualDate: "2026-11-10",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-11-10",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        kind: "INCOME",
+        actualAmount: "25.00",
+        actualDate: "2026-11-10",
+        accountAlias: "Citi",
+      }),
+    ];
+    repositories.listEntries.mockResolvedValue(rows);
+    repositories.listRelations.mockResolvedValue([
+      {
+        kind: "TRANSFER",
+        entryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        relatedEntryId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      },
+    ]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.transferCandidates).toEqual([
+      expect.objectContaining({
+        entryId: "22222222-2222-4222-8222-222222222222",
+        relatedEntryId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ]);
+  });
+
+  it("keeps transfer suggestions oriented when the expense appears first", async () => {
+    const expenseId = "11111111-1111-4111-8111-111111111111";
+    const incomeId = "22222222-2222-4222-8222-222222222222";
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        id: expenseId,
+        kind: "EXPENSE",
+        actualAmount: "25.00",
+        actualDate: "2026-11-12",
+        accountAlias: "Inter",
+      }),
+      entry({
+        id: incomeId,
+        kind: "INCOME",
+        actualAmount: "25.00",
+        actualDate: "2026-11-12",
+        accountAlias: "PagBank",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.transferCandidates).toEqual([
+      expect.objectContaining({ entryId: expenseId, relatedEntryId: incomeId }),
+    ]);
+  });
+
+  it("does not suggest a refund candidate whose remaining amount is insufficient", async () => {
+    const expenseId = "11111111-1111-4111-8111-111111111111";
+    const refundId = "22222222-2222-4222-8222-222222222222";
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        id: expenseId,
+        kind: "EXPENSE",
+        description: "Compra Mercado Central",
+        actualAmount: "10.00",
+        actualDate: "2026-11-01",
+      }),
+      entry({
+        id: refundId,
+        kind: "INCOME",
+        description: "Reembolso Mercado Central",
+        actualAmount: "15.00",
+        actualDate: "2026-11-10",
+        reviewStatus: "REVERSAL_PENDING",
+      }),
+      entry({
+        id: "33333333-3333-4333-8333-333333333333",
+        kind: "INCOME",
+        description: "Reembolso Mercado Central",
+        actualAmount: null,
+        actualDate: "2026-11-11",
+        reviewStatus: "REVERSAL_PENDING",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.reversalReviews[0]).toMatchObject({
+      entryId: refundId,
+      candidates: [],
+      expenses: [expect.objectContaining({ entryId: expenseId })],
+    });
+    expect(result.reversalReviews[1]).toMatchObject({
+      actualAmount: null,
+      candidates: [expect.objectContaining({ entryId: expenseId })],
     });
   });
 

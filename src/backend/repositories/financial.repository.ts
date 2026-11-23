@@ -11,11 +11,13 @@ import {
   sql,
 } from "drizzle-orm";
 import { getDatabaseClient } from "@/infrastructure/database/client";
+import { ApplicationError } from "@/backend/errors/application-error";
 import { requireDataOwnerId } from "@/infrastructure/auth/data-owner-context";
 import {
   financialCategories,
   financialCategoryPreferences,
   financialEntries,
+  financialEntryRelations,
   financialRecurrences,
 } from "@/infrastructure/database/schema";
 import { financialMonthCloseRepository } from "@/backend/repositories/financial-month-close.repository";
@@ -95,6 +97,8 @@ export class FinancialRepository {
         categoryId: financialEntries.categoryId,
         recurrenceId: financialEntries.recurrenceId,
         channel: financialEntries.channel,
+        accountAlias: financialEntries.accountAlias,
+        reviewStatus: financialEntries.reviewStatus,
         sourceCategory: financialEntries.sourceCategory,
         cardSettlementStatus: financialEntries.cardSettlementStatus,
         categoryName,
@@ -192,8 +196,12 @@ export class FinancialRepository {
       );
       const [snapshot] = await transaction
         .select({
+          kind: financialEntries.kind,
+          expectedAmount: financialEntries.expectedAmount,
           expectedDate: financialEntries.expectedDate,
+          actualAmount: financialEntries.actualAmount,
           actualDate: financialEntries.actualDate,
+          reviewStatus: financialEntries.reviewStatus,
         })
         .from(financialEntries)
         .where(
@@ -216,8 +224,12 @@ export class FinancialRepository {
       );
       const [existing] = await transaction
         .select({
+          kind: financialEntries.kind,
+          expectedAmount: financialEntries.expectedAmount,
           expectedDate: financialEntries.expectedDate,
+          actualAmount: financialEntries.actualAmount,
           actualDate: financialEntries.actualDate,
+          reviewStatus: financialEntries.reviewStatus,
         })
         .from(financialEntries)
         .where(
@@ -226,6 +238,43 @@ export class FinancialRepository {
         .for("update")
         .limit(1);
       if (!existing) return null;
+      if (
+        existing.reviewStatus === "REVERSAL_PENDING" &&
+        input.kind !== "INCOME"
+      ) {
+        throw new ApplicationError(
+          "Revise este crédito como estorno antes de alterar o tipo do lançamento.",
+          409,
+        );
+      }
+      const [relation] = await transaction
+        .select({ id: financialEntryRelations.id })
+        .from(financialEntryRelations)
+        .where(
+          and(
+            eq(financialEntryRelations.userId, userId),
+            or(
+              eq(financialEntryRelations.entryId, id),
+              eq(financialEntryRelations.relatedEntryId, id),
+            ),
+          ),
+        )
+        .limit(1);
+      if (
+        relation &&
+        (existing.kind !== input.kind ||
+          Number(existing.expectedAmount ?? 0) !==
+            Number(input.expectedAmount ?? 0) ||
+          existing.expectedDate !== input.expectedDate ||
+          Number(existing.actualAmount ?? 0) !==
+            Number(input.actualAmount ?? 0) ||
+          existing.actualDate !== input.actualDate)
+      ) {
+        throw new ApplicationError(
+          "Altere apenas a descrição ou a categoria deste lançamento enquanto o vínculo estiver ativo.",
+          409,
+        );
+      }
       await financialMonthCloseRepository.markDatesForReview(
         transaction,
         userId,
@@ -257,7 +306,10 @@ export class FinancialRepository {
       const [existing] = id
         ? await transaction
             .select({
+              kind: financialEntries.kind,
+              expectedAmount: financialEntries.expectedAmount,
               expectedDate: financialEntries.expectedDate,
+              actualAmount: financialEntries.actualAmount,
               actualDate: financialEntries.actualDate,
             })
             .from(financialEntries)
@@ -286,7 +338,15 @@ export class FinancialRepository {
       );
       if (id) {
         const [lockedEntry] = await transaction
-          .select({ id: financialEntries.id })
+          .select({
+            id: financialEntries.id,
+            kind: financialEntries.kind,
+            expectedAmount: financialEntries.expectedAmount,
+            expectedDate: financialEntries.expectedDate,
+            actualAmount: financialEntries.actualAmount,
+            actualDate: financialEntries.actualDate,
+            reviewStatus: financialEntries.reviewStatus,
+          })
           .from(financialEntries)
           .where(
             and(
@@ -298,6 +358,43 @@ export class FinancialRepository {
           .limit(1);
         if (!lockedEntry) {
           throw new Error("The linked financial entry could not be found.");
+        }
+        if (
+          lockedEntry.reviewStatus === "REVERSAL_PENDING" &&
+          input.kind !== "INCOME"
+        ) {
+          throw new ApplicationError(
+            "Revise este crédito como estorno antes de alterar o tipo do lançamento.",
+            409,
+          );
+        }
+        const [relation] = await transaction
+          .select({ id: financialEntryRelations.id })
+          .from(financialEntryRelations)
+          .where(
+            and(
+              eq(financialEntryRelations.userId, userId),
+              or(
+                eq(financialEntryRelations.entryId, id),
+                eq(financialEntryRelations.relatedEntryId, id),
+              ),
+            ),
+          )
+          .limit(1);
+        if (
+          relation &&
+          (lockedEntry.kind !== input.kind ||
+            Number(lockedEntry.expectedAmount ?? 0) !==
+              Number(input.expectedAmount ?? 0) ||
+            lockedEntry.expectedDate !== input.expectedDate ||
+            Number(lockedEntry.actualAmount ?? 0) !==
+              Number(input.actualAmount ?? 0) ||
+            lockedEntry.actualDate !== input.actualDate)
+        ) {
+          throw new ApplicationError(
+            "Altere apenas a descrição ou a categoria deste lançamento enquanto o vínculo estiver ativo.",
+            409,
+          );
         }
       }
       const [createdRecurrence] = await transaction
@@ -353,6 +450,8 @@ export class FinancialRepository {
       );
       const [existing] = await transaction
         .select({
+          kind: financialEntries.kind,
+          actualAmount: financialEntries.actualAmount,
           expectedDate: financialEntries.expectedDate,
           actualDate: financialEntries.actualDate,
         })
@@ -362,10 +461,58 @@ export class FinancialRepository {
         )
         .limit(1);
       if (!existing) return null;
+      const relatedRows = await transaction
+        .select({
+          id: financialEntryRelations.id,
+          kind: financialEntryRelations.kind,
+          entryId: financialEntryRelations.entryId,
+          relatedEntryId: financialEntryRelations.relatedEntryId,
+        })
+        .from(financialEntryRelations)
+        .where(
+          and(
+            eq(financialEntryRelations.userId, userId),
+            or(
+              eq(financialEntryRelations.entryId, id),
+              eq(financialEntryRelations.relatedEntryId, id),
+            ),
+          ),
+        );
+      const counterpartIds = [
+        ...new Set(
+          relatedRows
+            .map((relation) =>
+              relation.entryId === id
+                ? relation.relatedEntryId
+                : relation.entryId,
+            )
+            .filter((counterpartId) => counterpartId !== id),
+        ),
+      ];
+      const counterpartEntries = counterpartIds.length
+        ? await transaction
+            .select({
+              id: financialEntries.id,
+              kind: financialEntries.kind,
+              actualDate: financialEntries.actualDate,
+            })
+            .from(financialEntries)
+            .where(
+              and(
+                eq(financialEntries.userId, userId),
+                inArray(financialEntries.id, counterpartIds),
+              ),
+            )
+        : [];
+      const dates = [
+        existing.expectedDate,
+        existing.actualDate,
+        ...counterpartEntries.map((counterpart) => counterpart.actualDate),
+      ];
       await financialMonthCloseRepository.acquireMonthLocks(
         transaction,
         userId,
-        [existing.expectedDate, existing.actualDate]
+        dates
           .filter((date): date is string => Boolean(date))
           .map((date) => date.slice(0, 7)),
       );
@@ -378,10 +525,27 @@ export class FinancialRepository {
         .for("update")
         .limit(1);
       if (!lockedEntry) return null;
+      const reversalCreditsToRestore = relatedRows
+        .filter(
+          (relation) =>
+            relation.kind === "REVERSAL" && relation.relatedEntryId === id,
+        )
+        .map((relation) => relation.entryId);
+      if (reversalCreditsToRestore.length > 0) {
+        await transaction
+          .update(financialEntries)
+          .set({ reviewStatus: "REVERSAL_PENDING", updatedAt: new Date() })
+          .where(
+            and(
+              eq(financialEntries.userId, userId),
+              inArray(financialEntries.id, reversalCreditsToRestore),
+            ),
+          );
+      }
       await financialMonthCloseRepository.markDatesForReview(
         transaction,
         userId,
-        [existing.expectedDate, existing.actualDate],
+        dates,
       );
       const [entry] = await transaction
         .delete(financialEntries)

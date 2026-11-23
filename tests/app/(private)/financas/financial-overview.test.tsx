@@ -128,6 +128,62 @@ describe("FinancialOverview", () => {
     ).toBe(false);
   });
 
+  it("refreshes the overview after explicitly confirming a transfer", async () => {
+    const user = userEvent.setup();
+    let overviewReads = 0;
+    const overviewWithSuggestion = {
+      ...overview,
+      transferCandidates: [
+        {
+          entryId: "11111111-1111-4111-8111-111111111111",
+          relatedEntryId: "22222222-2222-4222-8222-222222222222",
+          entryDescription: "Pix enviado",
+          relatedDescription: "Pix recebido",
+          entryAccount: "Inter",
+          relatedAccount: "PagBank",
+          actualAmount: "25.00",
+          entryDate: "2026-11-10",
+          relatedDate: "2026-11-11",
+        },
+      ],
+      reversalReviews: [],
+    };
+    api.request.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/finance-overview")) {
+        overviewReads += 1;
+        return Promise.resolve(
+          overviewReads === 1 ? overviewWithSuggestion : overview,
+        );
+      }
+      if (url.startsWith("/api/financial-recurrences"))
+        return Promise.resolve({ recurrences: [], recurrenceOccurrences: [] });
+      if (
+        url === "/api/financial-entry-relations" &&
+        options?.method === "POST"
+      )
+        return Promise.resolve({ message: "Transferência confirmada." });
+      return Promise.resolve({});
+    });
+    renderFinance();
+    await user.click(
+      await screen.findByRole("button", { name: /Revisar movimentações/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
+    expect(api.request).toHaveBeenCalledWith(
+      "/api/financial-entry-relations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          kind: "TRANSFER",
+          entryId: "11111111-1111-4111-8111-111111111111",
+          relatedEntryId: "22222222-2222-4222-8222-222222222222",
+        }),
+      }),
+    );
+  });
+
   it("refreshes finance data after a recurrence is removed", async () => {
     const user = userEvent.setup();
     let overviewReads = 0;

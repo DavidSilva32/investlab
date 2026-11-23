@@ -16,6 +16,7 @@ export const statementConfirmSchema = z
   .object({
     fileHash: hash,
     source: z.literal("ACCOUNT").default("ACCOUNT"),
+    accountAlias: z.string().trim().min(1).max(80).nullable().optional(),
     coverageStart: date.nullable().default(null),
     coverageEnd: date.nullable().default(null),
     rememberCategories: z.boolean().default(true),
@@ -27,7 +28,9 @@ export const statementConfirmSchema = z
             kind: z.enum(["INCOME", "EXPENSE"]),
             description: z.string().trim().min(1).max(120),
             categoryId: z.string().uuid().nullable(),
-            possibleDuplicate: z.boolean().optional(),
+            manualDuplicateEntryId: z.string().uuid().nullable().optional(),
+            accountDuplicateEntryId: z.string().uuid().nullable().optional(),
+            confirmedDistinct: z.boolean().optional(),
             actualDate: date,
             actualAmount: z
               .number()
@@ -59,6 +62,26 @@ export const statementConfirmSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Há linhas repetidas na confirmação.",
+      });
+    }
+    const selectedManualIds = input.rows
+      .map((row) => row.manualDuplicateEntryId)
+      .filter((id): id is string => Boolean(id));
+    if (new Set(selectedManualIds).size !== selectedManualIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Cada lançamento manual só pode corresponder a uma linha do extrato.",
+      });
+    }
+    const selectedAccountIds = input.rows
+      .map((row) => row.accountDuplicateEntryId)
+      .filter((id): id is string => Boolean(id));
+    if (new Set(selectedAccountIds).size !== selectedAccountIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Cada movimentação existente só pode corresponder a uma linha do extrato.",
       });
     }
   });

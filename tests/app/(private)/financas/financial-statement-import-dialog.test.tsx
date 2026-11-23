@@ -280,7 +280,7 @@ describe("FinancialStatementImportDialog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("automatically hides duplicate rows and confirms them for server-side skipping", async () => {
+  it("ignores a duplicate only after matching the selected account", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -302,6 +302,7 @@ describe("FinancialStatementImportDialog", () => {
               amount: 10,
               errors: [],
               possibleDuplicate: true,
+              possibleDuplicateAccountAliases: ["Inter"],
             },
           ],
         }),
@@ -323,13 +324,14 @@ describe("FinancialStatementImportDialog", () => {
       screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
       { target: { files: [file] } },
     );
+    fireEvent.change(await screen.findByLabelText("Conta deste extrato"), {
+      target: { value: "inter" },
+    });
     expect(
-      await screen.findByText(
-        "1 lançamento repetido será ignorado automaticamente.",
+      await screen.findAllByText(
+        "Esta linha já existe nesta conta e será ignorada.",
       ),
-    ).toBeTruthy();
-    expect(screen.queryByLabelText("Descrição da linha 2")).toBeNull();
-    expect(screen.queryByLabelText("Importar linha 2")).toBeNull();
+    ).toHaveLength(2);
     expect(
       (
         screen.getByRole("button", {
@@ -347,14 +349,15 @@ describe("FinancialStatementImportDialog", () => {
       ),
     );
     const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
-      rows: Array<{ sourceRow: number; categoryId: string | null }>;
+      rows: Array<Record<string, unknown>>;
     };
     expect(confirmation.rows).toEqual([
       expect.objectContaining({ sourceRow: 2, categoryId: null }),
     ]);
+    expect(confirmation.rows[0]).not.toHaveProperty("possibleDuplicate");
   });
 
-  it("uses plural wording when multiple existing rows will be skipped", async () => {
+  it("marks each confirmed same-account duplicate for automatic skipping", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -362,6 +365,7 @@ describe("FinancialStatementImportDialog", () => {
           JSON.stringify({
             hash: "p".repeat(64),
             headers: [],
+            accountAliases: ["Inter"],
             mapping: {
               dateColumn: 0,
               descriptionColumn: 1,
@@ -377,6 +381,7 @@ describe("FinancialStatementImportDialog", () => {
               amount: 10,
               errors: [],
               possibleDuplicate: true,
+              possibleDuplicateAccountAliases: ["Inter"],
             })),
           }),
           { status: 200 },
@@ -399,13 +404,355 @@ describe("FinancialStatementImportDialog", () => {
         },
       },
     );
+    fireEvent.change(await screen.findByLabelText("Conta deste extrato"), {
+      target: { value: "Inter" },
+    });
 
     expect(
-      await screen.findByText(
-        "2 lançamentos repetidos serão ignorados automaticamente.",
+      await screen.findAllByText(
+        "Esta linha já existe nesta conta e será ignorada.",
       ),
-    ).toBeTruthy();
+    ).toHaveLength(4);
   });
+
+  it.each([0, 1])(
+    "lets the user link a bank row to a matching manual entry in rendering %s",
+    async (selectorIndex) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              hash: "m".repeat(64),
+              headers: [],
+              mapping: {
+                dateColumn: 0,
+                descriptionColumn: 1,
+                amountColumn: 2,
+                dateFormat: "DMY",
+                decimalSeparator: "COMMA",
+              },
+              rows: [
+                {
+                  sourceRow: 2,
+                  kind: "EXPENSE",
+                  description: "Luz",
+                  actualDate: "2026-11-14",
+                  amount: 10,
+                  categoryId: categories[0].id,
+                  errors: [],
+                  manualDuplicateCandidates: [
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      description: "Conta de luz",
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+      api.request.mockResolvedValueOnce({ importedCount: 0, skippedCount: 1 });
+      render(
+        <FinancialStatementImportDialog
+          open
+          onOpenChange={() => {}}
+          categories={categories}
+          onImported={() => {}}
+        />,
+      );
+      fireEvent.change(
+        screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+        {
+          target: {
+            files: [
+              new File(["statement"], "extrato.csv", { type: "text/csv" }),
+            ],
+          },
+        },
+      );
+      const reviewSelectors = await screen.findAllByRole("combobox", {
+        name: "Possível duplicidade da linha 2",
+      });
+      await userEvent.click(reviewSelectors[selectorIndex]);
+      await userEvent.click(
+        await screen.findByRole("option", { name: "É o mesmo: Conta de luz" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirmar importação" }),
+      );
+
+      await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+      const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+        rows: Array<{ manualDuplicateEntryId: string | null }>;
+      };
+      expect(confirmation.rows[0]?.manualDuplicateEntryId).toBe(
+        "11111111-1111-4111-8111-111111111111",
+      );
+    },
+  );
+
+  it.each([0, 1])(
+    "lets the user keep a manual candidate as a distinct movement in rendering %s",
+    async (selectorIndex) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              hash: "x".repeat(64),
+              headers: [],
+              mapping: {
+                dateColumn: 0,
+                descriptionColumn: 1,
+                amountColumn: 2,
+                dateFormat: "DMY",
+                decimalSeparator: "COMMA",
+              },
+              rows: [
+                {
+                  sourceRow: 2,
+                  kind: "EXPENSE",
+                  description: "Conta de luz",
+                  actualDate: "2026-11-14",
+                  amount: 219.64,
+                  categoryId: categories[0].id,
+                  errors: [],
+                  manualDuplicateCandidates: [
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      description: "Luz manual",
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+      api.request.mockResolvedValueOnce({ importedCount: 1 });
+      const user = userEvent.setup();
+      render(
+        <FinancialStatementImportDialog
+          open
+          onOpenChange={() => {}}
+          categories={categories}
+          onImported={() => {}}
+        />,
+      );
+      fireEvent.change(
+        screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+        {
+          target: {
+            files: [
+              new File(["statement"], "extrato.csv", { type: "text/csv" }),
+            ],
+          },
+        },
+      );
+      const selectors = await screen.findAllByRole("combobox", {
+        name: "Possível duplicidade da linha 2",
+      });
+      await user.click(selectors[selectorIndex]);
+      await user.click(
+        await screen.findByRole("option", {
+          name: "São movimentos diferentes",
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Confirmar importação" }),
+      );
+
+      await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+      const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+        rows: Array<{
+          manualDuplicateEntryId: string | null;
+          confirmedDistinct: boolean;
+        }>;
+      };
+      expect(confirmation.rows[0]).toMatchObject({
+        manualDuplicateEntryId: null,
+        confirmedDistinct: true,
+      });
+    },
+  );
+
+  it.each([0, 1])(
+    "allows a suspected duplicate to be confirmed as different in rendering %s",
+    async (selectorIndex) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              hash: "u".repeat(64),
+              headers: [],
+              mapping: {
+                dateColumn: 0,
+                descriptionColumn: 1,
+                amountColumn: 2,
+                dateFormat: "DMY",
+                decimalSeparator: "COMMA",
+              },
+              rows: [
+                {
+                  sourceRow: 2,
+                  kind: "EXPENSE",
+                  description: "Luz",
+                  actualDate: "2026-11-14",
+                  amount: 10,
+                  categoryId: categories[0].id,
+                  errors: [],
+                  possibleDuplicate: true,
+                  possibleDuplicateAccountAliases: [""],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+      api.request.mockResolvedValueOnce({ importedCount: 1, skippedCount: 0 });
+      render(
+        <FinancialStatementImportDialog
+          open
+          onOpenChange={() => {}}
+          categories={categories}
+          onImported={() => {}}
+        />,
+      );
+      fireEvent.change(
+        screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+        {
+          target: {
+            files: [
+              new File(["statement"], "extrato.csv", { type: "text/csv" }),
+            ],
+          },
+        },
+      );
+      const reviewSelectors = await screen.findAllByRole("combobox", {
+        name: "Revisão da duplicidade da linha 2",
+      });
+      await userEvent.click(reviewSelectors[selectorIndex]);
+      await userEvent.click(
+        await screen.findByRole("option", { name: "É um movimento diferente" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Confirmar importação" }),
+      );
+
+      await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+      const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+        rows: Array<{ confirmedDistinct: boolean }>;
+      };
+      expect(confirmation.rows[0]?.confirmedDistinct).toBe(true);
+    },
+  );
+
+  it.each([0, 1])(
+    "links a legacy account movement without an alias after explicit review in rendering %s",
+    async (selectorIndex) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              hash: "l".repeat(64),
+              headers: [],
+              accountAliases: [],
+              mapping: {
+                dateColumn: 0,
+                descriptionColumn: 1,
+                amountColumn: 2,
+                dateFormat: "DMY",
+                decimalSeparator: "COMMA",
+              },
+              rows: [
+                {
+                  sourceRow: 2,
+                  kind: "EXPENSE",
+                  description: "Mercado",
+                  actualDate: "2026-11-14",
+                  amount: 12.5,
+                  errors: [],
+                  categoryId: null,
+                  possibleDuplicate: true,
+                  possibleDuplicateAccountAliases: [""],
+                  accountDuplicateCandidates: [
+                    {
+                      entryId: "11111111-1111-4111-8111-111111111111",
+                      accountAlias: "",
+                    },
+                  ],
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+      api.request.mockResolvedValueOnce({
+        importedCount: 0,
+        duplicateCount: 1,
+      });
+      const user = userEvent.setup();
+      render(
+        <FinancialStatementImportDialog
+          open
+          onOpenChange={() => {}}
+          categories={categories}
+          onImported={() => {}}
+        />,
+      );
+      fireEvent.change(
+        screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+        {
+          target: {
+            files: [
+              new File(["statement"], "extrato.csv", { type: "text/csv" }),
+            ],
+          },
+        },
+      );
+      await screen.findAllByRole("textbox", { name: "Descrição da linha 2" });
+      const selectors = await screen.findAllByRole("combobox", {
+        name: "Revisão da duplicidade da linha 2",
+      });
+      await user.click(selectors[selectorIndex]);
+      await user.click(
+        await screen.findByRole("option", {
+          name: "É a mesma movimentação sem conta identificada",
+        }),
+      );
+      const confirmButton = screen.getByRole("button", {
+        name: "Confirmar importação",
+      });
+      expect(confirmButton).toHaveProperty("disabled", true);
+      fireEvent.change(screen.getByLabelText("Conta deste extrato"), {
+        target: { value: "Inter" },
+      });
+      expect(confirmButton).toHaveProperty("disabled", false);
+      await user.click(confirmButton);
+
+      await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+      const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+        accountAlias: string;
+        rows: Array<{
+          accountDuplicateEntryId: string | null;
+          categoryId: string | null;
+        }>;
+      };
+      expect(confirmation.accountAlias).toBe("Inter");
+      expect(confirmation.rows[0]).toMatchObject({
+        accountDuplicateEntryId: "11111111-1111-4111-8111-111111111111",
+        categoryId: null,
+      });
+    },
+  );
 
   it("does not submit included rows that still need a category", async () => {
     vi.stubGlobal(
@@ -440,6 +787,67 @@ describe("FinancialStatementImportDialog", () => {
     expect(
       screen.getAllByText("Escolha uma categoria.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("shows reversal review guidance in desktop and narrow-screen rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            hash: "r".repeat(64),
+            headers: [],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "INCOME",
+                description: "Estorno compra",
+                actualDate: "2026-11-14",
+                amount: 10,
+                errors: [],
+                categoryId: categories[1].id,
+                reversalReview: true,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+
+    expect(
+      await screen.findByText(
+        "Possível estorno ou reembolso. Será salvo para revisão, sem contar como renda.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Possível estorno/reembolso. Não será renda até ser conferido.",
+      ),
+    ).toBeTruthy();
   });
 
   it("keeps the narrow-screen review usable without horizontal table scrolling", async () => {
@@ -704,16 +1112,16 @@ describe("FinancialStatementImportDialog", () => {
     expect((date as HTMLInputElement).value).toBe("");
     fireEvent.change(date, { target: { value: "14112026" } });
     fireEvent.change(date, { target: { value: "" } });
-    expect(screen.getAllByText("Confira a data informada.").length).toBe(2);
+    expect(screen.getAllByText("Confira a data informada.").length).toBe(3);
 
     fireEvent.change(date, { target: { value: "3" } });
     expect((date as HTMLInputElement).value).toBe("3");
-    expect(screen.getAllByText("Confira a data informada.").length).toBe(2);
+    expect(screen.getAllByText("Confira a data informada.").length).toBe(3);
     fireEvent.change(date, { target: { value: "3102" } });
     expect((date as HTMLInputElement).value).toBe("31/02");
     fireEvent.change(date, { target: { value: "31022026" } });
     expect((date as HTMLInputElement).value).toBe("31/02/2026");
-    expect(screen.getAllByText("Confira a data informada.").length).toBe(2);
+    expect(screen.getAllByText("Confira a data informada.").length).toBe(3);
     fireEvent.change(date, { target: { value: "15112026" } });
     expect((date as HTMLInputElement).value).toBe("15/11/2026");
     expect(screen.queryAllByText("Confira a data informada.")).toHaveLength(0);
@@ -758,13 +1166,13 @@ describe("FinancialStatementImportDialog", () => {
     expect((amount as HTMLInputElement).value).toBe("");
     fireEvent.change(amount, { target: { value: "abc" } });
     expect((amount as HTMLInputElement).value).toBe("");
-    expect(screen.getAllByText("Confira o valor informado.").length).toBe(2);
+    expect(screen.getAllByText("Confira o valor informado.").length).toBe(3);
     fireEvent.change(amount, { target: { value: "12,50" } });
     expect((amount as HTMLInputElement).value).toBe("12.5");
     expect(screen.queryAllByText("Confira o valor informado.")).toHaveLength(0);
     expect(
       screen.getAllByText("Esta linha requer revisão manual."),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("reports unreadable previews and clears the selected file when cancelled", async () => {

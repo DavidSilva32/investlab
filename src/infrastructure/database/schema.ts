@@ -915,6 +915,8 @@ export const financialEntries = pgTable(
       .notNull()
       .references(() => financialCategories.id, { onDelete: "restrict" }),
     channel: varchar({ length: 12 }).notNull().default("MANUAL"),
+    accountAlias: varchar({ length: 80 }),
+    reviewStatus: varchar({ length: 24 }).notNull().default("NONE"),
     sourceCategory: varchar({ length: 80 }),
     cardSettlementStatus: varchar({ length: 16 }),
     recurrenceId: uuid().references(() => financialRecurrences.id, {
@@ -935,6 +937,14 @@ export const financialEntries = pgTable(
     check(
       "financial_entries_channel_check",
       sql`${table.channel} in ('MANUAL', 'ACCOUNT', 'CARD')`,
+    ),
+    check(
+      "financial_entries_review_status_check",
+      sql`${table.reviewStatus} in ('NONE', 'REVERSAL_PENDING', 'REVERSAL_DISMISSED')`,
+    ),
+    check(
+      "financial_entries_account_alias_check",
+      sql`${table.accountAlias} is null or length(trim(${table.accountAlias})) > 0`,
     ),
     check(
       "financial_entries_card_settlement_status_check",
@@ -978,6 +988,7 @@ export const financialStatementImports = pgTable(
     id: uuid().defaultRandom().primaryKey(),
     fileHash: varchar({ length: 64 }).notNull(),
     source: varchar({ length: 12 }).notNull().default("ACCOUNT"),
+    accountAlias: varchar({ length: 80 }),
     coverageStart: date(),
     coverageEnd: date(),
     importedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -994,6 +1005,59 @@ export const financialStatementImports = pgTable(
     check(
       "financial_statement_imports_coverage_pair_check",
       sql`(${table.coverageStart} is null and ${table.coverageEnd} is null) or (${table.coverageStart} is not null and ${table.coverageEnd} is not null and ${table.coverageStart} <= ${table.coverageEnd})`,
+    ),
+  ],
+);
+
+export const financialEntryRelations = pgTable(
+  "financial_entry_relations",
+  {
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    id: uuid().defaultRandom().primaryKey(),
+    kind: varchar({ length: 16 }).notNull(),
+    entryId: uuid().notNull(),
+    relatedEntryId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "financial_entry_relations_entry_owner_fk",
+      columns: [table.userId, table.entryId],
+      foreignColumns: [financialEntries.userId, financialEntries.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "financial_entry_relations_related_owner_fk",
+      columns: [table.userId, table.relatedEntryId],
+      foreignColumns: [financialEntries.userId, financialEntries.id],
+    }).onDelete("cascade"),
+    check(
+      "financial_entry_relations_kind_check",
+      sql`${table.kind} in ('TRANSFER', 'REVERSAL')`,
+    ),
+    check(
+      "financial_entry_relations_distinct_entries_check",
+      sql`${table.entryId} <> ${table.relatedEntryId}`,
+    ),
+    uniqueIndex("financial_entry_relations_pair_uidx").on(
+      table.userId,
+      table.kind,
+      table.entryId,
+      table.relatedEntryId,
+    ),
+    uniqueIndex("financial_entry_relations_transfer_entry_uidx")
+      .on(table.userId, table.entryId)
+      .where(sql`${table.kind} = 'TRANSFER'`),
+    uniqueIndex("financial_entry_relations_transfer_related_uidx")
+      .on(table.userId, table.relatedEntryId)
+      .where(sql`${table.kind} = 'TRANSFER'`),
+    uniqueIndex("financial_entry_relations_reversal_credit_uidx")
+      .on(table.userId, table.entryId)
+      .where(sql`${table.kind} = 'REVERSAL'`),
+    index("financial_entry_relations_user_related_idx").on(
+      table.userId,
+      table.relatedEntryId,
     ),
   ],
 );
