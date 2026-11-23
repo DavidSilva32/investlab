@@ -1,0 +1,3 @@
+CREATE UNIQUE INDEX "financial_entry_relations_transfer_entry_uidx" ON "financial_entry_relations" USING btree ("userId","entryId") WHERE "financial_entry_relations"."kind" = 'TRANSFER';--> statement-breakpoint
+CREATE UNIQUE INDEX "financial_entry_relations_transfer_related_uidx" ON "financial_entry_relations" USING btree ("userId","relatedEntryId") WHERE "financial_entry_relations"."kind" = 'TRANSFER';--> statement-breakpoint
+CREATE UNIQUE INDEX "financial_entry_relations_reversal_credit_uidx" ON "financial_entry_relations" USING btree ("userId","entryId") WHERE "financial_entry_relations"."kind" = 'REVERSAL';

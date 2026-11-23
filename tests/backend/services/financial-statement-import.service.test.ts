@@ -4,6 +4,8 @@ const {
   parseStatementFile,
   parseStatementRows,
   findPossibleDuplicateRows,
+  findManualDuplicateCandidates,
+  listAccountAliases,
   listAlreadyImportedRows,
   listSavedCategoryRules,
   confirmRows,
@@ -12,6 +14,8 @@ const {
   parseStatementFile: vi.fn(),
   parseStatementRows: vi.fn(),
   findPossibleDuplicateRows: vi.fn(),
+  findManualDuplicateCandidates: vi.fn(),
+  listAccountAliases: vi.fn(),
   listAlreadyImportedRows: vi.fn(),
   listSavedCategoryRules: vi.fn(),
   confirmRows: vi.fn(),
@@ -27,6 +31,8 @@ vi.mock("@/backend/repositories/financial-statement-import.repository", () => ({
     value.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " "),
   financialStatementImportRepository: {
     findPossibleDuplicateRows,
+    findManualDuplicateCandidates,
+    listAccountAliases,
     listAlreadyImportedRows,
     listSavedCategoryRules,
     confirm: confirmRows,
@@ -57,6 +63,8 @@ describe("FinancialStatementImportService", () => {
       },
     ]);
     findPossibleDuplicateRows.mockResolvedValue([]);
+    findManualDuplicateCandidates.mockResolvedValue([]);
+    listAccountAliases.mockResolvedValue([]);
     listAlreadyImportedRows.mockResolvedValue([]);
     listSavedCategoryRules.mockResolvedValue([]);
     listCategories.mockResolvedValue([
@@ -181,7 +189,15 @@ describe("FinancialStatementImportService", () => {
   );
 
   it("previews mapped rows and marks possible duplicates", async () => {
-    findPossibleDuplicateRows.mockResolvedValue([2]);
+    findPossibleDuplicateRows.mockResolvedValue([
+      {
+        sourceRow: 2,
+        accountAliases: ["Inter"],
+        accountDuplicateCandidates: [
+          { entryId: "legacy-entry", accountAlias: "Inter" },
+        ],
+      },
+    ]);
     const result = await financialStatementImportService.preview(
       { name: "extrato.csv", buffer: Buffer.from("x") },
       {
@@ -199,7 +215,46 @@ describe("FinancialStatementImportService", () => {
       dateFormat: "DMY",
       decimalSeparator: "COMMA",
     });
-    expect(result.rows[0]).toMatchObject({ possibleDuplicate: true });
+    expect(result.rows[0]).toMatchObject({
+      possibleDuplicate: true,
+      possibleDuplicateAccountAliases: ["Inter"],
+      accountDuplicateCandidates: [
+        { entryId: "legacy-entry", accountAlias: "Inter" },
+      ],
+    });
+  });
+
+  it("exposes account aliases, manual duplicate choices, and refund review", async () => {
+    listAccountAliases.mockResolvedValue(["Inter", "PagBank"]);
+    findManualDuplicateCandidates.mockResolvedValue([
+      {
+        sourceRow: 2,
+        candidates: [{ id: "manual-entry", description: "Compra no mercado" }],
+      },
+    ]);
+    parseStatementRows.mockReturnValue([
+      {
+        sourceRow: 2,
+        kind: "INCOME",
+        description: "Estorno compra no mercado",
+        actualDate: "2026-11-14",
+        amount: 10,
+        errors: [],
+      },
+    ]);
+
+    const result = await financialStatementImportService.preview({
+      name: "extrato.csv",
+      buffer: Buffer.from("x"),
+    });
+
+    expect(result.accountAliases).toEqual(["Inter", "PagBank"]);
+    expect(result.rows[0]).toMatchObject({
+      reversalReview: true,
+      manualDuplicateCandidates: [
+        { id: "manual-entry", description: "Compra no mercado" },
+      ],
+    });
   });
 
   it("infers ISO dates and dot decimal values from the file content", async () => {

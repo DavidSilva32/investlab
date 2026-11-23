@@ -332,6 +332,12 @@ function normalizedKeywords(description: string) {
     .toLocaleUpperCase("pt-BR");
 }
 
+export function isLikelyReversal(description: string) {
+  return /\b(?:ESTORNO|ESTORNADO|DEVOLUCAO|DEVOLVIDO|REEMBOLSO)\b/.test(
+    normalizedKeywords(description),
+  );
+}
+
 function inferEverydayCategory(description: string, kind: FinancialKind) {
   const text = normalizedKeywords(description);
   if (
@@ -538,11 +544,27 @@ export class FinancialStatementImportService {
       await financialStatementImportRepository.findPossibleDuplicateRows(
         validRows.filter((row) => !alreadyImported.has(row.sourceRow)),
       );
+    const duplicatesByRow = new Map(
+      duplicateRows.map((candidate) => [candidate.sourceRow, candidate]),
+    );
+    const manualDuplicateCandidates =
+      await financialStatementImportRepository.findManualDuplicateCandidates(
+        validRows.filter((row) => !alreadyImported.has(row.sourceRow)),
+      );
+    const manualCandidatesByRow = new Map(
+      manualDuplicateCandidates.map((candidate) => [
+        candidate.sourceRow,
+        candidate.candidates,
+      ]),
+    );
+    const accountAliases =
+      await financialStatementImportRepository.listAccountAliases();
     return {
       hash: parsedFile.hash,
       headers: parsedFile.headers,
       coverageStart: recognizedDates[0] ?? null,
       coverageEnd: recognizedDates.at(-1) ?? null,
+      accountAliases,
       mapping,
       rows: rows.map((row) => {
         const descriptionKey = normalizeStatementDescription(row.description);
@@ -579,7 +601,17 @@ export class FinancialStatementImportService {
                   ? "suggested"
                   : null,
           alreadyImported: alreadyImported.has(row.sourceRow),
-          possibleDuplicate: duplicateRows.includes(row.sourceRow),
+          possibleDuplicate: duplicatesByRow.has(row.sourceRow),
+          possibleDuplicateAccountAliases:
+            duplicatesByRow.get(row.sourceRow)?.accountAliases ?? [],
+          accountDuplicateCandidates:
+            duplicatesByRow.get(row.sourceRow)?.accountDuplicateCandidates ??
+            [],
+          manualDuplicateCandidates:
+            manualCandidatesByRow.get(row.sourceRow) ?? [],
+          reversalReview: Boolean(
+            kind === "INCOME" && isLikelyReversal(row.description),
+          ),
         };
       }),
     };

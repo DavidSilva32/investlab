@@ -70,6 +70,65 @@ describe("statementConfirmSchema", () => {
     }
   });
 
+  it("does not accept duplicate decisions from the client preview", () => {
+    expect(
+      statementConfirmSchema.safeParse({
+        ...validInput,
+        rows: [
+          {
+            ...validInput.rows[0],
+            possibleDuplicate: false,
+            possibleDuplicateAccountAliases: [],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects reusing one manual entry as the duplicate match for two rows", () => {
+    const result = statementConfirmSchema.safeParse({
+      ...validInput,
+      rows: [2, 3].map((sourceRow) => ({
+        ...validInput.rows[0],
+        sourceRow,
+        manualDuplicateEntryId: "223e4567-e89b-42d3-a456-426614174000",
+      })),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          code: "custom",
+          message:
+            "Cada lançamento manual só pode corresponder a uma linha do extrato.",
+        }),
+      );
+    }
+  });
+
+  it("rejects reusing one account entry as the duplicate match for two rows", () => {
+    const result = statementConfirmSchema.safeParse({
+      ...validInput,
+      accountAlias: "Inter",
+      rows: [2, 3].map((sourceRow) => ({
+        ...validInput.rows[0],
+        sourceRow,
+        categoryId: null,
+        accountDuplicateEntryId: "223e4567-e89b-42d3-a456-426614174000",
+      })),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          code: "custom",
+          message:
+            "Cada movimentação existente só pode corresponder a uma linha do extrato.",
+        }),
+      );
+    }
+  });
+
   it.each([
     { coverageStart: "2026-11-01", coverageEnd: null },
     { coverageStart: "2026-11-20", coverageEnd: "2026-11-01" },

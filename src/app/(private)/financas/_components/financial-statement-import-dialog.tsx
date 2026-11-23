@@ -36,18 +36,33 @@ type PreviewResponse = {
   hash: string;
   coverageStart?: string | null;
   coverageEnd?: string | null;
+  accountAliases?: string[];
   rows: Array<
     ParsedStatementRow & {
       alreadyImported?: boolean;
       categoryId?: string | null;
       categorySource?: "saved" | "suggested" | null;
       possibleDuplicate: boolean;
+      possibleDuplicateAccountAliases?: string[];
+      accountDuplicateCandidates?: Array<{
+        entryId: string;
+        accountAlias: string;
+      }>;
+      manualDuplicateCandidates?: Array<{ id: string; description: string }>;
+      reversalReview?: boolean;
     }
   >;
 };
 type ReviewRow = ParsedStatementRow & {
   alreadyImported?: boolean;
   possibleDuplicate: boolean;
+  possibleDuplicateAccountAliases: string[];
+  accountDuplicateCandidates: Array<{ entryId: string; accountAlias: string }>;
+  accountDuplicateEntryId: string;
+  manualDuplicateCandidates: Array<{ id: string; description: string }>;
+  manualDuplicateEntryId: string;
+  confirmedDistinct: boolean;
+  reversalReview: boolean;
   categoryId: string;
   categorySource?: "saved" | "suggested";
   included: boolean;
@@ -122,36 +137,58 @@ export function FinancialStatementImportDialog({
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [rememberCategories, setRememberCategories] = useState(true);
+  const [accountAlias, setAccountAlias] = useState("");
   const [loading, setLoading] = useState(false);
 
   const includedRows = useMemo(
     () => reviewRows.filter((row) => row.included),
     [reviewRows],
   );
+  const matchesSelectedAccount = (row: ReviewRow) =>
+    Boolean(
+      accountAlias.trim() &&
+      row.possibleDuplicateAccountAliases.some(
+        (alias) =>
+          alias.trim().toLocaleLowerCase("pt-BR") ===
+          accountAlias.trim().toLocaleLowerCase("pt-BR"),
+      ),
+    );
+  const requiresDuplicateReview = (row: ReviewRow) =>
+    row.possibleDuplicate &&
+    (!accountAlias.trim() || row.possibleDuplicateAccountAliases.includes(""));
   const invalidIncluded = includedRows.some(
     (row) =>
       row.errors.length ||
       !row.kind ||
       !row.actualDate ||
       !row.amount ||
-      (!row.categoryId && !row.possibleDuplicate && !row.alreadyImported),
+      (!row.categoryId &&
+        !row.alreadyImported &&
+        !row.manualDuplicateEntryId &&
+        !row.accountDuplicateEntryId &&
+        !matchesSelectedAccount(row)) ||
+      (requiresDuplicateReview(row) &&
+        !row.confirmedDistinct &&
+        !row.accountDuplicateEntryId) ||
+      (Boolean(row.accountDuplicateEntryId) && !accountAlias.trim()) ||
+      (row.manualDuplicateCandidates.length > 0 &&
+        !row.manualDuplicateEntryId &&
+        !row.confirmedDistinct),
   );
   const duplicateCount = reviewRows.filter(
-    (row) => row.possibleDuplicate || row.alreadyImported,
+    (row) =>
+      requiresDuplicateReview(row) ||
+      row.alreadyImported ||
+      row.manualDuplicateCandidates.length > 0 ||
+      row.reversalReview,
   ).length;
-  const rowsForReview = reviewRows.filter(
-    (row) => !row.possibleDuplicate && !row.alreadyImported,
-  );
+  const rowsForReview = reviewRows.filter((row) => !row.alreadyImported);
   const classifiedAutomaticallyCount = includedRows.filter(
     (row) =>
       row.categorySource === "saved" || row.categorySource === "suggested",
   ).length;
   const needsCategoryCount = includedRows.filter(
-    (row) =>
-      row.kind &&
-      !row.categoryId &&
-      !row.possibleDuplicate &&
-      !row.alreadyImported,
+    (row) => row.kind && !row.categoryId && !row.alreadyImported,
   ).length;
   const activeCategories = categories.filter((category) => category.active);
   const reset = () => {
@@ -160,6 +197,7 @@ export function FinancialStatementImportDialog({
     setPreview(null);
     setReviewRows([]);
     setRememberCategories(true);
+    setAccountAlias("");
     setLoading(false);
   };
 
@@ -183,6 +221,14 @@ export function FinancialStatementImportDialog({
           ...row,
           categoryId: row.categoryId ?? "",
           categorySource: row.categorySource ?? undefined,
+          possibleDuplicateAccountAliases:
+            row.possibleDuplicateAccountAliases ?? [],
+          accountDuplicateCandidates: row.accountDuplicateCandidates ?? [],
+          accountDuplicateEntryId: "",
+          manualDuplicateCandidates: row.manualDuplicateCandidates ?? [],
+          manualDuplicateEntryId: "",
+          confirmedDistinct: false,
+          reversalReview: row.reversalReview ?? false,
           included: row.errors.length === 0,
         })),
       );
@@ -213,13 +259,16 @@ export function FinancialStatementImportDialog({
             fileHash: selectedPreview.hash,
             coverageStart: selectedPreview.coverageStart ?? null,
             coverageEnd: selectedPreview.coverageEnd ?? null,
+            accountAlias: accountAlias.trim() || null,
             rememberCategories,
             rows: includedRows.map((row) => ({
               sourceRow: row.sourceRow,
               kind: row.kind,
               description: row.description.trim(),
               categoryId: row.categoryId || null,
-              possibleDuplicate: row.possibleDuplicate,
+              manualDuplicateEntryId: row.manualDuplicateEntryId || null,
+              accountDuplicateEntryId: row.accountDuplicateEntryId || null,
+              confirmedDistinct: row.confirmedDistinct,
               actualDate: toIsoDate(row.actualDate),
               actualAmount: Number(String(row.amount).replace(",", ".")),
             })),
@@ -334,6 +383,27 @@ export function FinancialStatementImportDialog({
           )}
           {reviewRows.length > 0 && (
             <section className="space-y-3">
+              <label className="block space-y-1 text-sm">
+                Conta deste extrato
+                <Input
+                  value={accountAlias}
+                  onChange={(event) => setAccountAlias(event.target.value)}
+                  maxLength={80}
+                  list="financial-statement-account-aliases"
+                  placeholder="Ex.: Inter principal"
+                  aria-label="Conta deste extrato"
+                />
+                <datalist id="financial-statement-account-aliases">
+                  {(preview?.accountAliases ?? []).map((alias) => (
+                    <option key={alias} value={alias} />
+                  ))}
+                </datalist>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Use o extrato para os movimentos desta conta. Registre
+                manualmente apenas dinheiro em espécie ou movimentos que não
+                aparecem nele.
+              </p>
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <p>
                   {includedRows.length} de {reviewRows.length} linhas
@@ -343,6 +413,7 @@ export function FinancialStatementImportDialog({
                     : "classificadas automaticamente"}{" "}
                   · {needsCategoryCount}{" "}
                   {needsCategoryCount === 1 ? "pendente" : "pendentes"}
+                  {duplicateCount > 0 && ` · ${duplicateCount} para revisar`}
                 </p>
               </div>
               <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
@@ -367,8 +438,30 @@ export function FinancialStatementImportDialog({
                   <tbody>
                     {rowsForReview.map((row) => {
                       const rowErrors = [...row.errors];
-                      if (row.included && !row.categoryId)
+                      if (
+                        row.included &&
+                        !row.categoryId &&
+                        !row.manualDuplicateEntryId &&
+                        !row.accountDuplicateEntryId
+                      )
                         rowErrors.push("Escolha uma categoria.");
+                      if (
+                        row.included &&
+                        requiresDuplicateReview(row) &&
+                        !row.confirmedDistinct &&
+                        !row.accountDuplicateEntryId
+                      )
+                        rowErrors.push(
+                          "Confirme que é um movimento diferente ou desmarque para não importar.",
+                        );
+                      if (
+                        row.included &&
+                        row.accountDuplicateEntryId &&
+                        !accountAlias.trim()
+                      )
+                        rowErrors.push(
+                          "Informe a conta deste extrato para vincular a movimentação.",
+                        );
                       const compatibleCategories = activeCategories.filter(
                         (category) => category.kind === row.kind,
                       );
@@ -496,6 +589,107 @@ export function FinancialStatementImportDialog({
                             />
                           </td>
                           <td className="break-words p-2 text-xs">
+                            {row.possibleDuplicate &&
+                              matchesSelectedAccount(row) && (
+                                <p className="mb-2 font-medium text-muted-foreground">
+                                  Esta linha já existe nesta conta e será
+                                  ignorada.
+                                </p>
+                              )}
+                            {requiresDuplicateReview(row) && (
+                              <div className="mb-2 space-y-1">
+                                <p className="font-medium text-amber-700">
+                                  Há um lançamento igual sem identificação
+                                  segura da conta.
+                                </p>
+                                {row.manualDuplicateCandidates.length === 0 && (
+                                  <Select
+                                    value={
+                                      row.confirmedDistinct
+                                        ? "DISTINCT"
+                                        : row.accountDuplicateEntryId
+                                    }
+                                    onValueChange={(value) =>
+                                      updateRow(row, {
+                                        accountDuplicateEntryId:
+                                          value === "DISTINCT" ? "" : value,
+                                        confirmedDistinct: value === "DISTINCT",
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger
+                                      aria-label={`Revisão da duplicidade da linha ${row.sourceRow}`}
+                                    >
+                                      <SelectValue placeholder="Revise antes de importar" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {row.accountDuplicateCandidates.map(
+                                        (candidate) => (
+                                          <SelectItem
+                                            key={candidate.entryId}
+                                            value={candidate.entryId}
+                                          >
+                                            É a mesma movimentação sem conta
+                                            identificada
+                                          </SelectItem>
+                                        ),
+                                      )}
+                                      <SelectItem value="DISTINCT">
+                                        É um movimento diferente
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </div>
+                            )}
+                            {row.manualDuplicateCandidates.length > 0 && (
+                              <div className="mb-2 space-y-1">
+                                <p className="font-medium text-amber-700">
+                                  Pode ser um movimento manual já registrado.
+                                </p>
+                                <Select
+                                  value={
+                                    row.confirmedDistinct
+                                      ? "DISTINCT"
+                                      : row.manualDuplicateEntryId
+                                  }
+                                  onValueChange={(value) =>
+                                    updateRow(row, {
+                                      manualDuplicateEntryId:
+                                        value === "DISTINCT" ? "" : value,
+                                      confirmedDistinct: value === "DISTINCT",
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger
+                                    aria-label={`Possível duplicidade da linha ${row.sourceRow}`}
+                                  >
+                                    <SelectValue placeholder="Revise a possível duplicidade" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {row.manualDuplicateCandidates.map(
+                                      (candidate) => (
+                                        <SelectItem
+                                          key={candidate.id}
+                                          value={candidate.id}
+                                        >
+                                          É o mesmo: {candidate.description}
+                                        </SelectItem>
+                                      ),
+                                    )}
+                                    <SelectItem value="DISTINCT">
+                                      São movimentos diferentes
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
+                            {row.reversalReview && (
+                              <p className="mb-2 font-medium text-amber-700">
+                                Possível estorno ou reembolso. Será salvo para
+                                revisão, sem contar como renda.
+                              </p>
+                            )}
                             {rowErrors.map((message) => (
                               <p key={message} className="text-destructive">
                                 {message}
@@ -511,8 +705,30 @@ export function FinancialStatementImportDialog({
               <div className="max-h-[42vh] space-y-3 overflow-y-auto overflow-x-hidden lg:hidden">
                 {rowsForReview.map((row) => {
                   const rowErrors = [...row.errors];
-                  if (row.included && !row.categoryId)
+                  if (
+                    row.included &&
+                    !row.categoryId &&
+                    !row.manualDuplicateEntryId &&
+                    !row.accountDuplicateEntryId
+                  )
                     rowErrors.push("Escolha uma categoria.");
+                  if (
+                    row.included &&
+                    requiresDuplicateReview(row) &&
+                    !row.confirmedDistinct &&
+                    !row.accountDuplicateEntryId
+                  )
+                    rowErrors.push(
+                      "Confirme que é um movimento diferente ou desmarque para não importar.",
+                    );
+                  if (
+                    row.included &&
+                    row.accountDuplicateEntryId &&
+                    !accountAlias.trim()
+                  )
+                    rowErrors.push(
+                      "Informe a conta deste extrato para vincular a movimentação.",
+                    );
                   const compatibleCategories = activeCategories.filter(
                     (category) => category.kind === row.kind,
                   );
@@ -651,6 +867,106 @@ export function FinancialStatementImportDialog({
                           />
                         </label>
                       </div>
+                      {row.manualDuplicateCandidates.length > 0 && (
+                        <label className="block space-y-1 text-xs text-muted-foreground">
+                          Possível duplicidade
+                          <Select
+                            value={
+                              row.confirmedDistinct
+                                ? "DISTINCT"
+                                : row.manualDuplicateEntryId
+                            }
+                            onValueChange={(value) =>
+                              updateRow(row, {
+                                manualDuplicateEntryId:
+                                  value === "DISTINCT" ? "" : value,
+                                confirmedDistinct: value === "DISTINCT",
+                              })
+                            }
+                          >
+                            <SelectTrigger
+                              aria-label={`Possível duplicidade da linha ${row.sourceRow}`}
+                            >
+                              <SelectValue placeholder="Revise esta possibilidade" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {row.manualDuplicateCandidates.map(
+                                (candidate) => (
+                                  <SelectItem
+                                    key={candidate.id}
+                                    value={candidate.id}
+                                  >
+                                    É o mesmo: {candidate.description}
+                                  </SelectItem>
+                                ),
+                              )}
+                              <SelectItem value="DISTINCT">
+                                São movimentos diferentes
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      )}
+                      {requiresDuplicateReview(row) && (
+                        <label className="block space-y-1 text-xs text-muted-foreground">
+                          Há um lançamento igual sem identificação segura da
+                          conta.
+                          {row.manualDuplicateCandidates.length === 0 && (
+                            <Select
+                              value={
+                                row.confirmedDistinct
+                                  ? "DISTINCT"
+                                  : row.accountDuplicateEntryId
+                              }
+                              onValueChange={(value) =>
+                                updateRow(row, {
+                                  accountDuplicateEntryId:
+                                    value === "DISTINCT" ? "" : value,
+                                  confirmedDistinct: value === "DISTINCT",
+                                })
+                              }
+                            >
+                              <SelectTrigger
+                                aria-label={`Revisão da duplicidade da linha ${row.sourceRow}`}
+                              >
+                                <SelectValue placeholder="Revise antes de importar" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {row.accountDuplicateCandidates.map(
+                                  (candidate) => (
+                                    <SelectItem
+                                      key={candidate.entryId}
+                                      value={candidate.entryId}
+                                    >
+                                      É a mesma movimentação sem conta
+                                      identificada
+                                    </SelectItem>
+                                  ),
+                                )}
+                                <SelectItem value="DISTINCT">
+                                  É um movimento diferente
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </label>
+                      )}
+                      {row.possibleDuplicate && matchesSelectedAccount(row) && (
+                        <p className="mb-2 font-medium text-muted-foreground">
+                          Esta linha já existe nesta conta e será ignorada.
+                        </p>
+                      )}
+                      {rowErrors.map((message) => (
+                        <p key={message} className="text-xs text-destructive">
+                          {message}
+                        </p>
+                      ))}
+                      {row.reversalReview && (
+                        <p className="text-xs font-medium text-amber-700">
+                          Possível estorno/reembolso. Não será renda até ser
+                          conferido.
+                        </p>
+                      )}
                       {rowErrors.length > 0 && (
                         <div className="space-y-1 text-xs text-destructive">
                           {rowErrors.map((message) => (
@@ -678,8 +994,8 @@ export function FinancialStatementImportDialog({
               {duplicateCount > 0 && (
                 <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
                   {duplicateCount === 1
-                    ? "1 lançamento repetido será ignorado automaticamente."
-                    : `${duplicateCount} lançamentos repetidos serão ignorados automaticamente.`}
+                    ? "1 lançamento precisa de revisão antes da importação."
+                    : `${duplicateCount} lançamentos precisam de revisão antes da importação.`}
                 </p>
               )}
             </section>

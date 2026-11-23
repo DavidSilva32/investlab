@@ -1,7 +1,26 @@
 import { financialService } from "@/backend/services/financial.service";
+import { financialEntryRelationsService } from "@/backend/services/financial-entry-relations.service";
 import { logger } from "@/infrastructure/logging/logger";
 
 export class FinancialController {
+  async createEntryRelation(body: unknown, requestId: string) {
+    const relation = await financialEntryRelationsService.create(body);
+    logger.info("financial_entry_relation_created", {
+      requestId,
+      relationId: relation.id,
+      kind: relation.kind,
+    });
+    return Response.json(
+      {
+        ...relation,
+        message:
+          relation.kind === "REVERSAL_DISMISSED"
+            ? "O crédito será considerado uma entrada."
+            : "Lançamentos relacionados.",
+      },
+      { status: 201 },
+    );
+  }
   async getCategories(requestId: string) {
     const categories = await financialService.listCategories();
     logger.info("financial_categories_loaded", {

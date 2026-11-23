@@ -5,6 +5,7 @@ import { FinancialEntriesTable } from "@/app/(private)/financas/_components/fina
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
 import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
+import { FinancialEntryReviews } from "@/app/(private)/financas/_components/financial-entry-reviews";
 import {
   FinancialMonthClose,
   type FinancialMonthClose as FinancialMonthCloseData,
@@ -40,6 +41,8 @@ type Entry = {
   expectedDate: string | null;
   actualAmount: string | null;
   actualDate: string | null;
+  accountAlias?: string | null;
+  reviewStatus?: "NONE" | "REVERSAL_PENDING" | "REVERSAL_DISMISSED";
 };
 type Occurrence = {
   id: string;
@@ -86,6 +89,35 @@ type Overview = {
     completeness: "recorded_only" | "no_data";
   };
   entries: Entry[];
+  transferCandidates: Array<{
+    entryId: string;
+    relatedEntryId: string;
+    entryDescription: string;
+    relatedDescription: string;
+    entryAccount: string;
+    relatedAccount: string;
+    actualAmount: string;
+    entryDate: string;
+    relatedDate: string;
+  }>;
+  reversalReviews: Array<{
+    entryId: string;
+    description: string;
+    actualAmount: string | null;
+    actualDate: string | null;
+    candidates: Array<{
+      entryId: string;
+      description: string;
+      actualDate: string;
+      remainingAmount: string;
+    }>;
+    expenses: Array<{
+      entryId: string;
+      description: string;
+      actualDate: string;
+      remainingAmount: string;
+    }>;
+  }>;
   history: {
     months: HistoryMonth[];
     completeness: "recorded_only";
@@ -312,6 +344,12 @@ export function FinancialOverview() {
             close={data?.close ?? null}
             readOnly={!canEdit}
             onClosed={() => void invalidateFinances(client)}
+          />
+          <FinancialEntryReviews
+            transfers={data?.transferCandidates ?? []}
+            reversals={data?.reversalReviews ?? []}
+            readOnly={!canEdit}
+            onChanged={() => void invalidateFinances(client)}
           />
           {data?.summary.completeness === "no_data" && (
             <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
