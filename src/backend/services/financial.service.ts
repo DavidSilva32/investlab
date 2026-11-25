@@ -471,9 +471,12 @@ export class FinancialService {
       entry.kind === "INCOME" && !transferEntryIds.has(entry.id);
     const isIncludedExpectedExpense = (entry: (typeof entries)[number]) =>
       entry.kind === "EXPENSE" && !transferEntryIds.has(entry.id);
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
     const reversalCentsByExpenseMonth = new Map<string, bigint>();
     for (const relation of reversalCredits) {
       if (!relation.relatedDate || !relation.entryAmount) continue;
+      const original = entryById.get(relation.relatedEntryId);
+      if (!original || !isIncludedExpense(original)) continue;
       const monthKey = relation.relatedDate.slice(0, 7);
       reversalCentsByExpenseMonth.set(
         monthKey,
@@ -491,6 +494,51 @@ export class FinancialService {
         ),
         reversalCentsByExpenseMonth.get(monthKey) ?? 0n,
       );
+    const getCategoryBreakdown = (
+      kind: "INCOME" | "EXPENSE",
+      actual: Array<(typeof entries)[number]>,
+      monthKey: string,
+    ) => {
+      const included = actual.filter(
+        kind === "INCOME" ? isIncludedIncome : isIncludedExpense,
+      );
+      const totals = new Map<
+        string,
+        { categoryId: string; categoryName: string; cents: bigint }
+      >();
+      for (const entry of included) {
+        if (!entry.actualAmount) continue;
+        const current = totals.get(entry.categoryId) ?? {
+          categoryId: entry.categoryId,
+          categoryName: entry.categoryName,
+          cents: 0n,
+        };
+        current.cents += parseCents(entry.actualAmount);
+        totals.set(entry.categoryId, current);
+      }
+      if (kind === "EXPENSE") {
+        for (const relation of reversalCredits) {
+          if (
+            !relation.entryAmount ||
+            relation.relatedDate?.slice(0, 7) !== monthKey
+          )
+            continue;
+          const original = entryById.get(relation.relatedEntryId);
+          if (!original || !isIncludedExpense(original)) continue;
+          // Persisted reversals reference realized expenses already in this month's totals.
+          totals.get(original.categoryId)!.cents -= parseCents(
+            relation.entryAmount,
+          );
+        }
+      }
+      return [...totals.values()].map(
+        ({ categoryId, categoryName, cents }) => ({
+          categoryId,
+          categoryName,
+          amount: formatCents(cents),
+        }),
+      );
+    };
     const currentRange = { startDate: month.startDate, endDate: month.endDate };
     const occurrenceByKey = new Map(
       savedOccurrences.map((occurrence) => [
@@ -858,6 +906,10 @@ export class FinancialService {
         completeness: hasAnyData
           ? ("recorded_only" as const)
           : ("no_data" as const),
+      },
+      categoryBreakdown: {
+        income: getCategoryBreakdown("INCOME", actualEntries, monthValue!),
+        expenses: getCategoryBreakdown("EXPENSE", actualEntries, monthValue!),
       },
       close,
       entries: currentEntries,

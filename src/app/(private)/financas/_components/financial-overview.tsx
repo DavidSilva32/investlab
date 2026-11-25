@@ -3,6 +3,7 @@
 import { FinancialEntryDialog as EntryDialog } from "@/app/(private)/financas/_components/financial-entry-dialog";
 import { FinancialEntriesTable } from "@/app/(private)/financas/_components/financial-entries-table";
 import { FinancialHistory } from "@/app/(private)/financas/_components/financial-history";
+import { FinancialCategoryChart } from "@/app/(private)/financas/_components/financial-category-chart";
 import { FinancialCapacitySimulator } from "@/app/(private)/financas/_components/financial-capacity-simulator";
 import { FinancialStatementImportDialog } from "@/app/(private)/financas/_components/financial-statement-import-dialog";
 import { FinancialEntryReviews } from "@/app/(private)/financas/_components/financial-entry-reviews";
@@ -87,6 +88,18 @@ type Overview = {
     recordedBalance: string | null;
     undatedRecurringRealizations: number;
     completeness: "recorded_only" | "no_data";
+  };
+  categoryBreakdown: {
+    income: Array<{
+      categoryId: string;
+      categoryName: string;
+      amount: string;
+    }>;
+    expenses: Array<{
+      categoryId: string;
+      categoryName: string;
+      amount: string;
+    }>;
   };
   entries: Entry[];
   transferCandidates: Array<{
@@ -261,8 +274,8 @@ export function FinancialOverview() {
         </div>
       </header>
       {overview.isPending ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[1, 2, 3, 4].map((x) => (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[1, 2, 3].map((x) => (
             <div
               key={x}
               className="h-28 animate-pulse rounded-xl border bg-muted/40 motion-reduce:animate-none"
@@ -284,22 +297,12 @@ export function FinancialOverview() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             {[
-              {
-                label: "Entradas previstas",
-                value: data?.summary.expectedIncome,
-                tone: "text-status-success border-l-status-success",
-              },
               {
                 label: "Entradas realizadas",
                 value: data?.summary.realizedIncome,
                 tone: "text-status-success border-l-status-success",
-              },
-              {
-                label: "Saídas previstas",
-                value: data?.summary.expectedExpenses,
-                tone: "text-status-danger border-l-status-danger",
               },
               {
                 label: "Saídas realizadas",
@@ -307,15 +310,7 @@ export function FinancialOverview() {
                 tone: "text-status-danger border-l-status-danger",
               },
               {
-                label: "Saldo previsto",
-                value: data?.summary.expectedBalance,
-                tone:
-                  Number(data?.summary.expectedBalance) < 0
-                    ? "text-status-danger border-l-status-danger"
-                    : "text-foreground border-l-border",
-              },
-              {
-                label: "Resultado líquido do mês",
+                label: "Resultado do período",
                 value: data?.summary.recordedBalance,
                 tone:
                   Number(data?.summary.recordedBalance) < 0
@@ -329,16 +324,14 @@ export function FinancialOverview() {
                   <p className="mt-2 text-2xl font-semibold tabular-nums">
                     {money(value as string | null)}
                   </p>
-                  {label === "Resultado líquido do mês" && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Entradas menos saídas registradas; não é o saldo da conta
-                      bancária.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             ))}
           </div>
+          <FinancialCategoryChart
+            income={data?.categoryBreakdown?.income ?? []}
+            expenses={data?.categoryBreakdown?.expenses ?? []}
+          />
           <FinancialMonthClose
             month={month}
             close={data?.close ?? null}
@@ -377,10 +370,7 @@ export function FinancialOverview() {
               />
             </CardContent>
           </Card>
-          <FinancialHistory
-            months={data?.history.months ?? []}
-            selectedMonth={month}
-          />
+          <FinancialHistory months={data?.history.months ?? []} />
         </>
       )}
       <EntryDialog
