@@ -103,6 +103,33 @@ describe("FinancialOverview", () => {
     expect(screen.queryByText("Conferir pagamentos de cartão")).toBeNull();
   });
 
+  it("orders category, entries, history, and the collapsed simulator by priority", async () => {
+    renderFinance();
+
+    const category = await screen.findByText("Por categoria");
+    const entries = screen.getByText("Lançamentos e vencimentos");
+    const history = screen.getByRole("heading", {
+      name: "Histórico realizado",
+    });
+    const simulator = screen.getByRole("button", {
+      name: "Simular mudança no mês",
+    });
+
+    expect(
+      category.compareDocumentPosition(entries) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      entries.compareDocumentPosition(history) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      history.compareDocumentPosition(simulator) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(simulator.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("keeps rendering when an older overview response has no category breakdown", async () => {
     const legacyOverview = JSON.parse(JSON.stringify(overview)) as Record<
       string,

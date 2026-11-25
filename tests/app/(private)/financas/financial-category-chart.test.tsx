@@ -64,6 +64,13 @@ describe("FinancialCategoryChart", () => {
     );
     expect(screen.getAllByTestId("chart-cell")).toHaveLength(2);
 
+    for (const name of ["Saídas", "Entradas"]) {
+      const tab = screen.getByRole("tab", { name });
+      expect(tab.classList.contains("cursor-pointer")).toBe(true);
+      expect(tab.classList.contains("hover:bg-background/80")).toBe(true);
+      expect(tab.classList.contains("focus-visible:ring-2")).toBe(true);
+    }
+
     await user.click(screen.getByRole("tab", { name: "Entradas" }));
 
     expect(screen.getByText("Salário")).toBeTruthy();

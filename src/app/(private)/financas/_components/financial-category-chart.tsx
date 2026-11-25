@@ -66,8 +66,18 @@ export function FinancialCategoryChart({
           onValueChange={(value) => setKind(value as typeof kind)}
         >
           <TabsList aria-label="Tipo de movimentação">
-            <TabsTrigger value="expenses">Saídas</TabsTrigger>
-            <TabsTrigger value="income">Entradas</TabsTrigger>
+            <TabsTrigger
+              value="expenses"
+              className="cursor-pointer transition-colors hover:bg-background/80 hover:text-foreground"
+            >
+              Saídas
+            </TabsTrigger>
+            <TabsTrigger
+              value="income"
+              className="cursor-pointer transition-colors hover:bg-background/80 hover:text-foreground"
+            >
+              Entradas
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </CardHeader>

@@ -350,7 +350,6 @@ export function FinancialOverview() {
               compromisso recorrente para acompanhar seu fluxo.
             </p>
           )}
-          <FinancialCapacitySimulator key={month} month={month} />
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">
@@ -371,6 +370,7 @@ export function FinancialOverview() {
             </CardContent>
           </Card>
           <FinancialHistory months={data?.history.months ?? []} />
+          <FinancialCapacitySimulator key={month} month={month} />
         </>
       )}
       <EntryDialog
