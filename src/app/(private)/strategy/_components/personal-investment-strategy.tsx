@@ -167,67 +167,48 @@ export function PersonalInvestmentStrategy() {
 
   return (
     <div className="w-full space-y-5">
-      {(data.valuationDates.length > 1 ||
-        data.portfolioWealth.unvaluedPositionCount > 0 ||
-        data.portfolioWealth.unclassifiedPositionCount > 0) && (
-        <Alert>
-          <AlertTitle>Cobertura dos valores</AlertTitle>
-          <AlertDescription>
-            {data.valuationDates.length > 1 &&
-              `As posições têm datas efetivas diferentes: ${data.valuationDates.map(formatDate).join(", ")}. `}
-            {data.portfolioWealth.unvaluedPositionCount > 0 &&
-              `${data.portfolioWealth.unvaluedPositionCount} posição(ões) não têm valor conhecido. `}
-            {BigInt(data.portfolioWealth.unclassifiedKnownValueCents) > 0n
-              ? `${formatCurrencyCents(data.portfolioWealth.unclassifiedKnownValueCents)} em posições sem classe identificada não se enquadram nos quatro grupos mostrados.`
-              : data.portfolioWealth.unclassifiedPositionCount > 0
-                ? `${data.portfolioWealth.unclassifiedPositionCount} posição(ões) não têm classe identificada.`
-                : null}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <Alert variant={data.strategyWealth.complete ? "default" : "destructive"}>
-        <AlertTitle>
-          {data.strategyWealth.complete
-            ? "A estratégia considera apenas investimentos de longo prazo"
-            : "Não foi possível calcular a composição de longo prazo"}
-        </AlertTitle>
-        <AlertDescription>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <p>
+          Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos
+          percentuais.
+        </p>
+        {data.strategyWealth.excludedObjectives.length > 0 && (
           <p>
-            Reserva e objetivos pessoais continuam no patrimônio da carteira,
-            mas ficam fora dos percentuais da estratégia.
+            {data.strategyWealth.excludedObjectives
+              .map((objective) =>
+                objective.amountCents === null
+                  ? `${objective.name}: saldo não informado`
+                  : `${objective.name}: ${formatCurrencyCents(objective.amountCents)}${objective.observedOn ? ` (${formatDate(objective.observedOn)})` : ""}`,
+              )
+              .join(" · ")}
           </p>
-          {data.strategyWealth.excludedObjectives.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {data.strategyWealth.excludedObjectives.map((objective) => (
-                <li key={objective.id}>
-                  {objective.name}:{" "}
-                  {objective.amountCents === null
-                    ? "saldo não informado"
-                    : formatCurrencyCents(objective.amountCents)}
-                  {objective.observedOn
-                    ? ` · informado em ${formatDate(objective.observedOn)}`
-                    : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-          {data.strategyWealth.limitation === "missing_objective_balance" && (
-            <p className="mt-2">
-              Informe o saldo mais recente de cada objetivo para calcular os
-              percentuais sem estimativas.
-            </p>
-          )}
-          {data.strategyWealth.limitation ===
-            "objective_balances_exceed_fixed_income" && (
-            <p className="mt-2">
-              Os saldos informados para esses objetivos superam a renda fixa
-              reconhecida na carteira. Revise os valores antes de usar a
-              estratégia.
-            </p>
-          )}
-        </AlertDescription>
-      </Alert>
+        )}
+        {data.strategyWealth.limitation === "missing_objective_balance" && (
+          <p>Informe os saldos dos objetivos para calcular os percentuais.</p>
+        )}
+        {data.strategyWealth.limitation ===
+          "objective_balances_exceed_fixed_income" && (
+          <p>
+            Os saldos dos objetivos superam a renda fixa reconhecida. Revise os
+            valores antes de usar a estratégia.
+          </p>
+        )}
+        {(data.valuationDates.length > 1 ||
+          data.portfolioWealth.unvaluedPositionCount > 0 ||
+          data.portfolioWealth.unclassifiedPositionCount > 0) && (
+          <p>
+            {data.valuationDates.length > 1 &&
+              `Datas dos valores: ${data.valuationDates.map(formatDate).join(", ")}. `}
+            {data.portfolioWealth.unvaluedPositionCount > 0 &&
+              `${data.portfolioWealth.unvaluedPositionCount} posição(ões) sem valor conhecido. `}
+            {BigInt(data.portfolioWealth.unclassifiedKnownValueCents) > 0n
+              ? `${formatCurrencyCents(data.portfolioWealth.unclassifiedKnownValueCents)} sem classe identificada.`
+              : data.portfolioWealth.unclassifiedPositionCount > 0
+                ? `${data.portfolioWealth.unclassifiedPositionCount} posição(ões) sem classe identificada.`
+                : null}
+          </p>
+        )}
+      </div>
 
       {data.portfolioWealth.positionCount === 0 ? (
         <div className="space-y-4">

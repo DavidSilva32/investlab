@@ -133,7 +133,9 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.getByText(/02\/10\/2026/)).toBeTruthy();
     expect(screen.getByText("Distribuição por classe")).toBeTruthy();
     expect(
-      screen.getByText(/Reserva e objetivos pessoais continuam no patrimônio/),
+      screen.getByText(
+        /Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos percentuais\./,
+      ),
     ).toBeTruthy();
     expect(screen.queryByText("O que importa para você?")).toBeNull();
     expect(screen.getByText(/não identifica recomendações/)).toBeTruthy();
@@ -174,15 +176,18 @@ describe("PersonalInvestmentStrategy", () => {
 
     expect(
       await screen.findByText(
-        "A estratégia considera apenas investimentos de longo prazo",
+        /Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos percentuais\./,
       ),
     ).toBeTruthy();
     expect(
-      screen.getByText(/Reserva: R\$\s*560,00 · informado em 14\/11\/2026/),
+      screen.getByText(/Reserva: R\$\s*560,00 \(14\/11\/2026\)/),
     ).toBeTruthy();
     expect(
-      screen.getByText(/Reserva e objetivos pessoais continuam no patrimônio/),
-    ).toBeTruthy();
+      screen.queryByText(
+        "A estratégia considera apenas investimentos de longo prazo",
+      ),
+    ).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("explains why strategy percentages are unavailable for incomplete objective balances", async () => {
@@ -211,12 +216,14 @@ describe("PersonalInvestmentStrategy", () => {
 
     expect(
       await screen.findByText(
-        "Não foi possível calcular a composição de longo prazo",
+        "Informe os saldos dos objetivos para calcular os percentuais.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Viagem: saldo não informado")).toBeTruthy();
     expect(
-      screen.getByText(/Informe o saldo mais recente de cada objetivo/),
+      screen.getByText(
+        "Informe os saldos dos objetivos para calcular os percentuais.",
+      ),
     ).toBeTruthy();
   });
 
@@ -245,9 +252,7 @@ describe("PersonalInvestmentStrategy", () => {
     render(<PersonalInvestmentStrategy />);
 
     expect(await screen.findByText("Viagem: R$ 150,00")).toBeTruthy();
-    expect(
-      screen.getByText(/superam a renda fixa reconhecida na carteira/),
-    ).toBeTruthy();
+    expect(screen.getByText(/superam a renda fixa reconhecida/)).toBeTruthy();
   });
 
   it("retries after a blocking load error", async () => {
@@ -326,17 +331,15 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(await screen.findByText("Cobertura dos valores")).toBeTruthy();
+    expect(
+      await screen.findByText(/Datas dos valores: 30\/09\/2026, 02\/10\/2026/),
+    ).toBeTruthy();
     expect(screen.queryByText(/sem finalidade definida/)).toBeNull();
+    expect(screen.queryByText("Cobertura dos valores")).toBeNull();
     expect(
-      screen.getByText(/As posições têm datas efetivas diferentes/),
+      screen.getByText(/1 posição\(ões\) sem valor conhecido/),
     ).toBeTruthy();
-    expect(
-      screen.getByText(/1 posição\(ões\) não têm valor conhecido/),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/R\$\s*5,00 em posições sem classe identificada/),
-    ).toBeTruthy();
+    expect(screen.getByText(/R\$\s*5,00 sem classe identificada/)).toBeTruthy();
   });
 
   it("keeps a single older effective date beside the total without a separate alert", async () => {
@@ -391,7 +394,7 @@ describe("PersonalInvestmentStrategy", () => {
     render(<PersonalInvestmentStrategy />);
 
     expect(
-      await screen.findByText(/1 posição\(ões\) não têm classe identificada/),
+      await screen.findByText(/1 posição\(ões\) sem classe identificada/),
     ).toBeTruthy();
   });
 
@@ -407,7 +410,9 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(await screen.findByText("Cobertura dos valores")).toBeTruthy();
+    expect(
+      await screen.findByText(/Datas dos valores: 01\/10\/2026, 02\/10\/2026/),
+    ).toBeTruthy();
     expect(screen.queryByText(/não têm classe identificada/)).toBeNull();
   });
 
