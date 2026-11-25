@@ -167,49 +167,6 @@ export function PersonalInvestmentStrategy() {
 
   return (
     <div className="w-full space-y-5">
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p>
-          Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos
-          percentuais.
-        </p>
-        {data.strategyWealth.excludedObjectives.length > 0 && (
-          <p>
-            {data.strategyWealth.excludedObjectives
-              .map((objective) =>
-                objective.amountCents === null
-                  ? `${objective.name}: saldo não informado`
-                  : `${objective.name}: ${formatCurrencyCents(objective.amountCents)}${objective.observedOn ? ` (${formatDate(objective.observedOn)})` : ""}`,
-              )
-              .join(" · ")}
-          </p>
-        )}
-        {data.strategyWealth.limitation === "missing_objective_balance" && (
-          <p>Informe os saldos dos objetivos para calcular os percentuais.</p>
-        )}
-        {data.strategyWealth.limitation ===
-          "objective_balances_exceed_fixed_income" && (
-          <p>
-            Os saldos dos objetivos superam a renda fixa reconhecida. Revise os
-            valores antes de usar a estratégia.
-          </p>
-        )}
-        {(data.valuationDates.length > 1 ||
-          data.portfolioWealth.unvaluedPositionCount > 0 ||
-          data.portfolioWealth.unclassifiedPositionCount > 0) && (
-          <p>
-            {data.valuationDates.length > 1 &&
-              `Datas dos valores: ${data.valuationDates.map(formatDate).join(", ")}. `}
-            {data.portfolioWealth.unvaluedPositionCount > 0 &&
-              `${data.portfolioWealth.unvaluedPositionCount} posição(ões) sem valor conhecido. `}
-            {BigInt(data.portfolioWealth.unclassifiedKnownValueCents) > 0n
-              ? `${formatCurrencyCents(data.portfolioWealth.unclassifiedKnownValueCents)} sem classe identificada.`
-              : data.portfolioWealth.unclassifiedPositionCount > 0
-                ? `${data.portfolioWealth.unclassifiedPositionCount} posição(ões) sem classe identificada.`
-                : null}
-          </p>
-        )}
-      </div>
-
       {data.portfolioWealth.positionCount === 0 ? (
         <div className="space-y-4">
           <Card>
