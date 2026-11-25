@@ -36,6 +36,7 @@ const overview = {
     undatedRecurringRealizations: 0,
     completeness: "no_data" as const,
   },
+  categoryBreakdown: { income: [], expenses: [] },
   entries: [],
   history: {
     months: Array.from({ length: 12 }, (_, index) => ({
@@ -83,21 +84,39 @@ afterEach(() => {
 });
 
 describe("FinancialOverview", () => {
-  it("shows a concise six-value summary without card reconciliation", async () => {
+  it("shows only realized totals and a category breakdown without card reconciliation", async () => {
     renderFinance();
 
     for (const label of [
-      "Entradas previstas",
       "Entradas realizadas",
-      "Saídas previstas",
       "Saídas realizadas",
-      "Saldo previsto",
-      "Resultado líquido do mês",
+      "Resultado do período",
+      "Por categoria",
     ]) {
-      expect(await screen.findByText(label)).toBeTruthy();
+      expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
     }
+    expect(screen.queryByText("Entradas previstas")).toBeNull();
+    expect(screen.queryByText("Saídas previstas")).toBeNull();
+    expect(screen.queryByText("Saldo previsto")).toBeNull();
+    expect(screen.queryByText(/não é o saldo da conta bancária/)).toBeNull();
     expect(screen.queryByText("Compras no cartão")).toBeNull();
     expect(screen.queryByText("Conferir pagamentos de cartão")).toBeNull();
+  });
+
+  it("keeps rendering when an older overview response has no category breakdown", async () => {
+    const legacyOverview = JSON.parse(JSON.stringify(overview)) as Record<
+      string,
+      unknown
+    >;
+    delete legacyOverview.categoryBreakdown;
+    api.request.mockResolvedValue(legacyOverview);
+
+    renderFinance();
+
+    expect(await screen.findByText("Por categoria")).toBeTruthy();
+    expect(
+      screen.getByText(/Ainda não há saídas realizadas neste mês/),
+    ).toBeTruthy();
   });
 
   it("shows missing recorded values as unavailable instead of zero", async () => {
@@ -258,9 +277,9 @@ describe("FinancialOverview", () => {
     renderFinance();
 
     expect(
-      (await screen.findByText("Saldo previsto")).parentElement?.parentElement
-        ?.textContent,
-    ).toContain("2.000,00");
+      (await screen.findByText("Entradas realizadas")).parentElement
+        ?.parentElement?.textContent,
+    ).toContain("8.000,00");
     expect(
       screen.queryByRole("heading", {
         name: "Distribuição pela estratégia",
@@ -767,9 +786,9 @@ describe("FinancialOverview", () => {
     renderFinance();
 
     expect(await screen.findByText("Conta de luz")).toBeTruthy();
-    expect(
-      screen.getByText("Resultado líquido do mês").parentElement?.textContent,
-    ).toContain("não é o saldo da conta bancária");
+    expect(screen.getAllByText("Resultado do período").length).toBeGreaterThan(
+      0,
+    );
     expect(
       screen.getByText("Entradas realizadas").parentElement?.parentElement
         ?.textContent,
@@ -820,7 +839,7 @@ describe("FinancialOverview", () => {
     );
   }, 10_000);
 
-  it("marks negative balances and refreshes the overview after deleting an entry", async () => {
+  it("marks a negative period result and refreshes after deleting an entry", async () => {
     const user = userEvent.setup();
     const populated = {
       ...overview,
@@ -859,12 +878,8 @@ describe("FinancialOverview", () => {
 
     await screen.findByText("Conta de teste");
     expect(
-      screen.getByText("Saldo previsto").parentElement?.parentElement
-        ?.className,
-    ).toContain("text-status-danger");
-    expect(
-      screen.getByText("Resultado líquido do mês").parentElement?.parentElement
-        ?.className,
+      screen.getAllByText("Resultado do período")[0].parentElement
+        ?.parentElement?.className,
     ).toContain("text-status-danger");
 
     await user.click(

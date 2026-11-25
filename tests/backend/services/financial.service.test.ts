@@ -839,6 +839,169 @@ describe("FinancialService", () => {
     ]);
   });
 
+  it("breaks down cash flow by category, excluding confirmed transfers and netting linked reversals", async () => {
+    const incomeId = "11111111-1111-4111-8111-111111111111";
+    const investmentId = "22222222-2222-4222-8222-222222222222";
+    const groceryId = "33333333-3333-4333-8333-333333333333";
+    const transferOutId = "44444444-4444-4444-8444-444444444444";
+    const transferInId = "55555555-5555-4555-8555-555555555555";
+    const reversalId = "66666666-6666-4666-8666-666666666666";
+    repositories.listEntries.mockResolvedValue([
+      entry({
+        id: incomeId,
+        kind: "INCOME",
+        categoryId: defaultCategory.id,
+        categoryName: "Salário",
+        actualAmount: "150.00",
+        actualDate: "2026-11-02",
+      }),
+      entry({
+        id: investmentId,
+        categoryId: ownedCategory.id,
+        categoryName: "Investimentos",
+        actualAmount: "100.00",
+        actualDate: "2026-11-03",
+      }),
+      entry({
+        id: groceryId,
+        categoryId: defaultExpenseCategory.id,
+        categoryName: "Alimentação",
+        actualAmount: "50.00",
+        actualDate: "2026-11-04",
+      }),
+      entry({
+        id: transferOutId,
+        kind: "EXPENSE",
+        actualAmount: "200.00",
+        actualDate: "2026-11-05",
+      }),
+      entry({
+        id: transferInId,
+        kind: "INCOME",
+        actualAmount: "200.00",
+        actualDate: "2026-11-05",
+      }),
+      entry({
+        id: reversalId,
+        kind: "INCOME",
+        categoryId: defaultCategory.id,
+        categoryName: "Outras entradas",
+        actualAmount: "20.00",
+        actualDate: "2026-11-06",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([
+      {
+        kind: "TRANSFER",
+        entryId: transferOutId,
+        relatedEntryId: transferInId,
+        entryAmount: "200.00",
+        relatedDate: "2026-11-05",
+      },
+      {
+        kind: "REVERSAL",
+        entryId: reversalId,
+        relatedEntryId: investmentId,
+        entryAmount: "20.00",
+        relatedDate: "2026-11-03",
+      },
+    ]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.categoryBreakdown).toEqual({
+      income: [
+        {
+          categoryId: defaultCategory.id,
+          categoryName: "Salário",
+          amount: "150.00",
+        },
+      ],
+      expenses: [
+        {
+          categoryId: ownedCategory.id,
+          categoryName: "Investimentos",
+          amount: "80.00",
+        },
+        {
+          categoryId: defaultExpenseCategory.id,
+          categoryName: "Alimentação",
+          amount: "50.00",
+        },
+      ],
+    });
+    expect(result.summary).toMatchObject({
+      realizedIncome: "150.00",
+      realizedExpenses: "130.00",
+      recordedBalance: "20.00",
+    });
+  });
+
+  it("ignores reversal relations whose original expense is absent or excluded", async () => {
+    const transferOutId = "11111111-1111-4111-8111-111111111111";
+    const transferInId = "22222222-2222-4222-8222-222222222222";
+    const reversalId = "33333333-3333-4333-8333-333333333333";
+    const validExpense = entry({
+      id: "44444444-4444-4444-8444-444444444444",
+      actualAmount: "100.00",
+      actualDate: "2026-11-10",
+    });
+    repositories.listEntries.mockResolvedValue([
+      validExpense,
+      entry({
+        id: transferOutId,
+        actualAmount: "500.00",
+        actualDate: "2026-11-11",
+      }),
+      entry({
+        id: transferInId,
+        kind: "INCOME",
+        actualAmount: "500.00",
+        actualDate: "2026-11-11",
+      }),
+      entry({
+        id: reversalId,
+        kind: "INCOME",
+        actualAmount: "30.00",
+        actualDate: "2026-11-12",
+      }),
+    ]);
+    repositories.listRelations.mockResolvedValue([
+      {
+        kind: "TRANSFER",
+        entryId: transferOutId,
+        relatedEntryId: transferInId,
+        entryAmount: "500.00",
+        relatedDate: "2026-11-11",
+      },
+      {
+        kind: "REVERSAL",
+        entryId: reversalId,
+        relatedEntryId: transferOutId,
+        entryAmount: "20.00",
+        relatedDate: "2026-11-11",
+      },
+      {
+        kind: "REVERSAL",
+        entryId: reversalId,
+        relatedEntryId: "55555555-5555-4555-8555-555555555555",
+        entryAmount: "10.00",
+        relatedDate: "2026-11-10",
+      },
+    ]);
+
+    const result = await service.getMonthlyOverview("2026-11");
+
+    expect(result.summary.realizedExpenses).toBe("100.00");
+    expect(result.categoryBreakdown.expenses).toEqual([
+      {
+        categoryId: ownedCategory.id,
+        categoryName: "Moradia",
+        amount: "100.00",
+      },
+    ]);
+  });
+
   it("simulates income and expense changes with exact cents without saving data", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));

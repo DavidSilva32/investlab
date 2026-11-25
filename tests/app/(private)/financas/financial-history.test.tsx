@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TooltipProps } from "recharts";
 
 vi.mock("@/components/ui/chart", () => ({
   ChartContainer: ({
@@ -11,13 +12,7 @@ vi.mock("@/components/ui/chart", () => ({
     children: React.ReactNode;
     config: Record<string, unknown>;
   }) => <div {...props}>{children}</div>,
-  ChartTooltip: ({
-    content,
-  }: {
-    content: React.ReactElement<{
-      valueFormatter?: (value: unknown) => React.ReactNode;
-    }>;
-  }) => <span>{content.props.valueFormatter?.("5000.00")}</span>,
+  ChartTooltip: () => <span data-testid="history-tooltip" />,
   ChartTooltipContent: () => null,
 }));
 vi.mock("recharts", () => ({
@@ -31,6 +26,7 @@ vi.mock("recharts", () => ({
 }));
 import {
   FinancialHistory,
+  FinancialHistoryTooltip,
   formatFinancialHistoryTick,
 } from "@/app/(private)/financas/_components/financial-history";
 
@@ -41,6 +37,33 @@ describe("FinancialHistory", () => {
     expect(formatFinancialHistoryTick("2025-01")).not.toBe(
       formatFinancialHistoryTick("2026-01"),
     );
+  });
+
+  it("shows monthly results in the tooltip and handles unavailable values", () => {
+    const { rerender } = render(
+      <FinancialHistoryTooltip active={false} payload={[]} />,
+    );
+    expect(screen.queryByText(/setembro de 2026/i)).toBeNull();
+
+    rerender(<FinancialHistoryTooltip active payload={[]} />);
+    expect(screen.queryByText(/setembro de 2026/i)).toBeNull();
+
+    const unavailableValues = [
+      {
+        payload: {
+          fullMonth: "2026-09",
+          entradas: null,
+          saidas: 3200,
+          resultado: null,
+        },
+      },
+    ] as unknown as TooltipProps<number, string>["payload"];
+    rerender(<FinancialHistoryTooltip active payload={unavailableValues} />);
+
+    expect(screen.getByText("setembro de 2026")).toBeTruthy();
+    expect(screen.getByText("Entradas: Sem registro")).toBeTruthy();
+    expect(screen.getByText(/Saídas:.*3\.200,00/)).toBeTruthy();
+    expect(screen.getByText("Resultado do período: Sem registro")).toBeTruthy();
   });
 
   it("preserves missing months as unavailable without redundant helper copy", () => {
@@ -54,7 +77,6 @@ describe("FinancialHistory", () => {
             recordedBalance: null,
           },
         ]}
-        selectedMonth="2026-10"
       />,
     );
 
@@ -95,7 +117,6 @@ describe("FinancialHistory", () => {
             recordedBalance: null,
           },
         ]}
-        selectedMonth="2026-10"
       />,
     );
 
@@ -105,19 +126,14 @@ describe("FinancialHistory", () => {
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("Entradas").length).toBeGreaterThan(0);
-    expect(
-      within(
-        screen.getByLabelText(
-          "Gráfico de entradas e saídas realizadas nos últimos 12 meses",
-        ),
-      ).getByText(/5\.000,00/),
-    ).toBeTruthy();
+    const historyTable = screen.getByRole("table", {
+      name: "Valores mensais do histórico realizado",
+    });
+    expect(within(historyTable).getByText(/5\.000,00/)).toBeTruthy();
     expect(screen.getAllByText("Sem registro").length).toBeGreaterThan(0);
-    expect(
-      screen
-        .getAllByText(/1\.800,00/)
-        .some((value) => value.className.includes("text-status-danger")),
-    ).toBe(true);
+    expect(within(historyTable).getByText("Resultado do período")).toBeTruthy();
+    expect(within(historyTable).getByText(/1\.800,00/)).toBeTruthy();
+    expect(screen.getByTestId("history-tooltip")).toBeTruthy();
     expect(
       screen.queryByText(
         "Ainda não há dados realizados para comparar no histórico.",
