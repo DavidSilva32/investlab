@@ -133,15 +133,16 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.getByText(/02\/10\/2026/)).toBeTruthy();
     expect(screen.getByText("Distribuição por classe")).toBeTruthy();
     expect(
-      screen.getByText(
+      screen.queryByText(
         /Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos percentuais\./,
       ),
-    ).toBeTruthy();
+    ).toBeNull();
+    expect(screen.queryByText(/Datas dos valores:/)).toBeNull();
     expect(screen.queryByText("O que importa para você?")).toBeNull();
     expect(screen.getByText(/não identifica recomendações/)).toBeTruthy();
   });
 
-  it("shows objective balances and their source dates outside strategy percentages", async () => {
+  it("does not show objective balances or their source dates above the strategy", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -174,14 +175,10 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(
-      await screen.findByText(
-        /Estratégia de longo prazo; Reserva e objetivos pessoais ficam fora dos percentuais\./,
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/Reserva: R\$\s*560,00 \(14\/11\/2026\)/),
-    ).toBeTruthy();
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
+    expect(screen.queryByText(/Reserva: R\$/)).toBeNull();
+    expect(screen.queryByText(/14\/11\/2026/)).toBeNull();
+    expect(screen.queryByText(/Estratégia de longo prazo/)).toBeNull();
     expect(
       screen.queryByText(
         "A estratégia considera apenas investimentos de longo prazo",
@@ -190,7 +187,7 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("explains why strategy percentages are unavailable for incomplete objective balances", async () => {
+  it("does not show explanatory text for incomplete objectives", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -214,20 +211,12 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(
-      await screen.findByText(
-        "Informe os saldos dos objetivos para calcular os percentuais.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("Viagem: saldo não informado")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Informe os saldos dos objetivos para calcular os percentuais.",
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
+    expect(screen.queryByText(/Informe os saldos dos objetivos/)).toBeNull();
+    expect(screen.queryByText(/Viagem: saldo não informado/)).toBeNull();
   });
 
-  it("warns when observed objectives exceed known fixed income", async () => {
+  it("does not show explanatory text when objective balances exceed fixed income", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -251,8 +240,9 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(await screen.findByText("Viagem: R$ 150,00")).toBeTruthy();
-    expect(screen.getByText(/superam a renda fixa reconhecida/)).toBeTruthy();
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
+    expect(screen.queryByText("Viagem: R$ 150,00")).toBeNull();
+    expect(screen.queryByText(/superam a renda fixa reconhecida/)).toBeNull();
   });
 
   it("retries after a blocking load error", async () => {
@@ -313,7 +303,7 @@ describe("PersonalInvestmentStrategy", () => {
     ).toBeTruthy();
   });
 
-  it("shows valuation coverage without requiring destination assignment", async () => {
+  it("does not show valuation coverage notes above the strategy", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -331,15 +321,12 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(
-      await screen.findByText(/Datas dos valores: 30\/09\/2026, 02\/10\/2026/),
-    ).toBeTruthy();
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
     expect(screen.queryByText(/sem finalidade definida/)).toBeNull();
     expect(screen.queryByText("Cobertura dos valores")).toBeNull();
-    expect(
-      screen.getByText(/1 posição\(ões\) sem valor conhecido/),
-    ).toBeTruthy();
-    expect(screen.getByText(/R\$\s*5,00 sem classe identificada/)).toBeTruthy();
+    expect(screen.queryByText(/Datas dos valores:/)).toBeNull();
+    expect(screen.queryByText(/posição\(ões\) sem valor conhecido/)).toBeNull();
+    expect(screen.queryByText(/sem classe identificada/)).toBeNull();
   });
 
   it("keeps a single older effective date beside the total without a separate alert", async () => {
@@ -377,7 +364,7 @@ describe("PersonalInvestmentStrategy", () => {
     expect(screen.queryByText(/Valores efetivos em 30\/09\/2026/)).toBeNull();
   });
 
-  it("reports ambiguous positions that have no known classified value", async () => {
+  it("does not show ambiguous-position helper text above the strategy", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -393,9 +380,10 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
     expect(
-      await screen.findByText(/1 posição\(ões\) sem classe identificada/),
-    ).toBeTruthy();
+      screen.queryByText(/1 posição\(ões\) sem classe identificada/),
+    ).toBeNull();
   });
 
   it("does not show a classification warning when all positions are classifiable", async () => {
@@ -410,9 +398,8 @@ describe("PersonalInvestmentStrategy", () => {
     );
     render(<PersonalInvestmentStrategy />);
 
-    expect(
-      await screen.findByText(/Datas dos valores: 01\/10\/2026, 02\/10\/2026/),
-    ).toBeTruthy();
+    expect(await screen.findByText("Distribuição por classe")).toBeTruthy();
+    expect(screen.queryByText(/Datas dos valores:/)).toBeNull();
     expect(screen.queryByText(/não têm classe identificada/)).toBeNull();
   });
 
