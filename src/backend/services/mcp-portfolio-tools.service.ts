@@ -13,8 +13,117 @@ import type { ObjectiveProjectionInput } from "@/lib/objective-projection";
 import { runWithDataOwner } from "@/infrastructure/auth/data-owner-context";
 import { ApplicationError } from "@/backend/errors/application-error";
 import { mcpMutationReplaysRepository } from "@/backend/repositories/mcp-mutation-replays.repository";
+import { financialService } from "@/backend/services/financial.service";
+
+const maximumFinancialPageSize = 50;
+
+function currentFinancialMonth(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}`;
+}
+
+function compareNullableDate(left: string | null, right: string | null) {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left.localeCompare(right);
+}
 
 export class McpPortfolioToolsService {
+  async getMyFinancialSummary(userId: string, month?: string) {
+    return runWithDataOwner(userId, async () => {
+      const overview = await financialService.getMonthlyOverview(
+        month ?? currentFinancialMonth(),
+      );
+      return {
+        month: overview.month,
+        summary: {
+          income: overview.summary.realizedIncome,
+          expenses: overview.summary.realizedExpenses,
+          periodResult: overview.summary.recordedBalance,
+          completeness: overview.summary.completeness,
+        },
+        categoryBreakdown: overview.categoryBreakdown,
+        interpretation:
+          "O resultado do período é a diferença entre entradas e saídas registradas. Não representa o saldo bancário. Transferências próprias confirmadas e estornos vinculados são tratados conforme os vínculos existentes no InvestLab.",
+        limitations:
+          "Inclui apenas movimentos registrados no InvestLab para o mês. Compras de cartão não entram neste resumo. Previsões não fazem parte dos valores realizados; meses sem dados não significam valores zerados nem cobertura completa.",
+      };
+    });
+  }
+
+  async listMyFinancialEntries(
+    userId: string,
+    input: {
+      month?: string;
+      page: number;
+      pageSize: number;
+      kind?: "INCOME" | "EXPENSE";
+      category?: string;
+    },
+  ) {
+    if (
+      !Number.isInteger(input.page) ||
+      input.page < 1 ||
+      input.page > 50_000 ||
+      !Number.isInteger(input.pageSize) ||
+      input.pageSize < 1 ||
+      input.pageSize > maximumFinancialPageSize
+    ) {
+      throw new ApplicationError("Revise a paginação solicitada.", 400);
+    }
+    const month = input.month ?? currentFinancialMonth();
+    const categoryQuery = input.category?.trim().toLocaleLowerCase("pt-BR");
+    return runWithDataOwner(userId, async () => {
+      const { entries } = await financialService.listEntries(month);
+      const filteredEntries = [...entries]
+        .sort(
+          (left, right) =>
+            compareNullableDate(left.expectedDate, right.expectedDate) ||
+            compareNullableDate(left.actualDate, right.actualDate) ||
+            left.id.localeCompare(right.id),
+        )
+        .filter(
+          (entry) =>
+            (!input.kind || entry.kind === input.kind) &&
+            (!categoryQuery ||
+              entry.categoryName
+                .toLocaleLowerCase("pt-BR")
+                .includes(categoryQuery)),
+        );
+      const start = (input.page - 1) * input.pageSize;
+      const selectedEntries = filteredEntries.slice(
+        start,
+        start + input.pageSize,
+      );
+      return {
+        month,
+        page: input.page,
+        pageSize: input.pageSize,
+        totalCount: filteredEntries.length,
+        hasMore: start + selectedEntries.length < filteredEntries.length,
+        ordering:
+          "Data prevista crescente, depois data realizada crescente e identificador crescente; datas ausentes ficam por último.",
+        entries: selectedEntries.map((entry) => ({
+          id: entry.id,
+          description: entry.description,
+          kind: entry.kind,
+          category: entry.categoryName,
+          expectedAmount: entry.expectedAmount,
+          expectedDate: entry.expectedDate,
+          actualAmount: entry.actualAmount,
+          actualDate: entry.actualDate,
+        })),
+        limitations:
+          "A lista contém apenas os lançamentos da conta conectada e do mês selecionado; movimentos do cartão não são incluídos nesta consulta. Valores previstos e realizados são apresentados separadamente.",
+      };
+    });
+  }
+
   async createMyObjective(
     userId: string,
     input: {

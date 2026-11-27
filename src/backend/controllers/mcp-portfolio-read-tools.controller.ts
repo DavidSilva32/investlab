@@ -7,6 +7,60 @@ import { z } from "zod";
 export class McpPortfolioReadToolsController {
   register(server: McpServer, userId: string, requestId: string) {
     server.registerTool(
+      "get_my_financial_summary",
+      {
+        description:
+          "Consulta o resumo realizado de Finanças da conta conectada em um mês. O resultado do período não é saldo bancário; previsões ficam separadas.",
+        inputSchema: z.object({
+          month: z
+            .string()
+            .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+            .optional(),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ month } = {}) => {
+        try {
+          const result = await mcpPortfolioToolsService.getMyFinancialSummary(
+            userId,
+            month,
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          return toolError(error);
+        }
+      },
+    );
+    server.registerTool(
+      "list_my_financial_entries",
+      {
+        description:
+          "Lista lançamentos previstos e realizados da conta conectada por mês, com paginação e filtros opcionais por tipo ou nome de categoria. Lançamentos de cartão não são incluídos.",
+        inputSchema: z.object({
+          month: z
+            .string()
+            .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+            .optional(),
+          page: z.number().int().min(1).max(50_000).default(1),
+          pageSize: z.number().int().min(1).max(50).default(25),
+          kind: z.enum(["INCOME", "EXPENSE"]).optional(),
+          category: z.string().trim().min(1).max(80).optional(),
+        }),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ month, page, pageSize, kind, category }) => {
+        try {
+          const result = await mcpPortfolioToolsService.listMyFinancialEntries(
+            userId,
+            { month, page, pageSize, kind, category },
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          return toolError(error);
+        }
+      },
+    );
+    server.registerTool(
       "get_my_portfolio",
       {
         description:

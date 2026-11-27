@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   registerTool: vi.fn(),
+  getMyFinancialSummary: vi.fn(),
+  listMyFinancialEntries: vi.fn(),
   getMyPortfolio: vi.fn(),
   listMyManualPositions: vi.fn(),
   getMyEmergencyReserve: vi.fn(),
@@ -16,6 +18,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/backend/services/mcp-portfolio-tools.service", () => ({
   mcpPortfolioToolsService: {
+    getMyFinancialSummary: mocks.getMyFinancialSummary,
+    listMyFinancialEntries: mocks.listMyFinancialEntries,
     getMyPortfolio: mocks.getMyPortfolio,
     listMyManualPositions: mocks.listMyManualPositions,
     getMyEmergencyReserve: mocks.getMyEmergencyReserve,
@@ -90,6 +94,8 @@ describe("McpPortfolioReadToolsController", () => {
       projectedNominalAmount: 1000,
     });
     mocks.getMarketQuotes.mockResolvedValue({ results: [] });
+    mocks.getMyFinancialSummary.mockResolvedValue({ month: "2026-11" });
+    mocks.listMyFinancialEntries.mockResolvedValue({ entries: [] });
     controller.register(
       { registerTool: mocks.registerTool } as never,
       "owner-1",
@@ -123,8 +129,20 @@ describe("McpPortfolioReadToolsController", () => {
     const marketQuotes = await tools.get("get_b3_market_quotes")?.({
       tickers: ["ABCD3", "ABCD4"],
     } as never);
+    const financeSummary = await tools.get("get_my_financial_summary")?.({
+      month: "2026-11",
+    } as never);
+    const financeEntries = await tools.get("list_my_financial_entries")?.({
+      month: "2026-11",
+      page: 2,
+      pageSize: 10,
+      kind: "EXPENSE",
+      category: "Moradia",
+    } as never);
 
     expect([...tools.keys()]).toEqual([
+      "get_my_financial_summary",
+      "list_my_financial_entries",
       "get_my_portfolio",
       "list_my_manual_positions",
       "get_my_emergency_reserve",
@@ -136,6 +154,33 @@ describe("McpPortfolioReadToolsController", () => {
       "simulate_objective_projection",
       "get_b3_market_quotes",
     ]);
+    expect(mocks.getMyFinancialSummary).toHaveBeenCalledWith(
+      "owner-1",
+      "2026-11",
+    );
+    expect(mocks.listMyFinancialEntries).toHaveBeenCalledWith("owner-1", {
+      month: "2026-11",
+      page: 2,
+      pageSize: 10,
+      kind: "EXPENSE",
+      category: "Moradia",
+    });
+    expect(
+      schemas.get("list_my_financial_entries")?.inputSchema.safeParse({
+        month: "2026-11",
+        page: 1,
+        pageSize: 50,
+        kind: "EXPENSE",
+        category: "Moradia",
+      }).success,
+    ).toBe(true);
+    expect(
+      schemas.get("list_my_financial_entries")?.inputSchema.safeParse({
+        month: "2026-13",
+        page: 1,
+        pageSize: 51,
+      }).success,
+    ).toBe(false);
     expect(schemas.get("get_my_emergency_reserve")?.description).toMatch(
       /saldo informado mais recente e sua data.*posições da carteira são independentes/iu,
     );
@@ -174,6 +219,12 @@ describe("McpPortfolioReadToolsController", () => {
       ["ABCD3", "ABCD4"],
       "req-1",
     );
+    expect(financeSummary).toEqual({
+      content: [{ type: "text", text: JSON.stringify({ month: "2026-11" }) }],
+    });
+    expect(financeEntries).toEqual({
+      content: [{ type: "text", text: JSON.stringify({ entries: [] }) }],
+    });
     expect(portfolio).toEqual({
       content: [
         {
@@ -372,6 +423,8 @@ describe("McpPortfolioReadToolsController", () => {
     );
 
     const failingTools = [
+      ["get_my_financial_summary", mocks.getMyFinancialSummary],
+      ["list_my_financial_entries", mocks.listMyFinancialEntries],
       ["get_my_objectives", mocks.getMyObjectives],
       ["get_my_long_term_strategy", mocks.getMyLongTermStrategy],
       ["get_my_portfolio_allocation", mocks.getMyPortfolioAllocation],
@@ -385,9 +438,13 @@ describe("McpPortfolioReadToolsController", () => {
       const input =
         toolName === "get_b3_market_quotes"
           ? { tickers: ["ABCD3"] }
-          : toolName === "simulate_objective_projection"
-            ? { mode: "project_balance" }
-            : undefined;
+          : toolName === "get_my_financial_summary"
+            ? { month: "2026-11" }
+            : toolName === "list_my_financial_entries"
+              ? { page: 1, pageSize: 25 }
+              : toolName === "simulate_objective_projection"
+                ? { mode: "project_balance" }
+                : undefined;
       await expect(
         tools.get(toolName)?.(input as never),
       ).resolves.toMatchObject({

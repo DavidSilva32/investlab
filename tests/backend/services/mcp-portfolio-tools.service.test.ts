@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   listRecentOperations: vi.fn(),
   simulateObjectiveProjection: vi.fn(),
   getMarketByTicker: vi.fn(),
+  getFinancialOverview: vi.fn(),
+  listFinancialEntries: vi.fn(),
   runWithDataOwner: vi.fn((userId: string, operation: () => unknown) => {
     mocks.runWithDataOwnerCall(userId);
     return operation();
@@ -73,6 +75,12 @@ vi.mock("@/backend/services/objective-balance.service", () => ({
 }));
 vi.mock("@/backend/services/stock-analysis.service", () => ({
   stockAnalysisService: { getMarketByTicker: mocks.getMarketByTicker },
+}));
+vi.mock("@/backend/services/financial.service", () => ({
+  financialService: {
+    getMonthlyOverview: mocks.getFinancialOverview,
+    listEntries: mocks.listFinancialEntries,
+  },
 }));
 vi.mock("@/backend/services/portfolio.service", () => ({
   portfolioService: {
@@ -139,6 +147,275 @@ describe("McpPortfolioToolsService read tools", () => {
       movements: overview.movements,
     });
     expect(JSON.stringify(result)).not.toContain("other-user");
+  });
+
+  it("returns the existing realized financial summary without calling it a bank balance", async () => {
+    const overview = {
+      month: "2026-11",
+      summary: {
+        realizedIncome: "5000.00",
+        realizedExpenses: "1200.00",
+        recordedBalance: "3800.00",
+        completeness: "recorded_only",
+      },
+      categoryBreakdown: {
+        income: [
+          {
+            categoryId: "income-1",
+            categoryName: "Serviço",
+            amount: "5000.00",
+          },
+        ],
+        expenses: [
+          {
+            categoryId: "expenses-1",
+            categoryName: "Moradia",
+            amount: "1200.00",
+          },
+        ],
+      },
+    };
+    mocks.getFinancialOverview.mockResolvedValue(overview);
+
+    const result = await service.getMyFinancialSummary(
+      "owner-from-sub",
+      "2026-11",
+    );
+
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("owner-from-sub");
+    expect(mocks.getFinancialOverview).toHaveBeenCalledWith("2026-11");
+    expect(result).toMatchObject({
+      month: "2026-11",
+      summary: {
+        income: "5000.00",
+        expenses: "1200.00",
+        periodResult: "3800.00",
+        completeness: "recorded_only",
+      },
+      categoryBreakdown: overview.categoryBreakdown,
+    });
+    expect(JSON.stringify(result)).toContain("Não representa o saldo bancário");
+    expect(JSON.stringify(result)).toContain("Compras de cartão não entram");
+    expect(JSON.stringify(result)).not.toContain("accountAlias");
+  });
+
+  it("defaults financial summary to the current São Paulo month", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-27T03:00:00.000Z"));
+    mocks.getFinancialOverview.mockResolvedValue({
+      month: "2026-11",
+      summary: {
+        realizedIncome: null,
+        realizedExpenses: null,
+        recordedBalance: null,
+        completeness: "no_data",
+      },
+      categoryBreakdown: { income: [], expenses: [] },
+    });
+
+    try {
+      await service.getMyFinancialSummary("trusted-owner");
+      expect(mocks.getFinancialOverview).toHaveBeenCalledWith("2026-11");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("filters and paginates only the connected account's financial entries", async () => {
+    mocks.listFinancialEntries.mockResolvedValue({
+      month: "2026-11",
+      entries: [
+        {
+          id: "entry-1",
+          description: "Aluguel",
+          kind: "EXPENSE",
+          categoryId: "home",
+          categoryName: "Moradia",
+          expectedAmount: null,
+          expectedDate: null,
+          actualAmount: "1000.00",
+          actualDate: "2026-11-02",
+          channel: "STATEMENT",
+          reviewStatus: "CONFIRMED",
+          userId: "other-user-must-not-leak",
+          accountAlias: "Privada",
+        },
+        {
+          id: "entry-2",
+          description: "Mercado",
+          kind: "EXPENSE",
+          categoryId: "food",
+          categoryName: "Alimentação",
+          expectedAmount: "500.00",
+          expectedDate: "2026-11-10",
+          actualAmount: null,
+          actualDate: null,
+          channel: "MANUAL",
+          reviewStatus: "OPEN",
+        },
+      ],
+    });
+
+    const result = await service.listMyFinancialEntries("trusted-owner", {
+      month: "2026-11",
+      page: 1,
+      pageSize: 1,
+      kind: "EXPENSE",
+      category: "menta",
+    });
+
+    expect(mocks.runWithDataOwnerCall).toHaveBeenCalledWith("trusted-owner");
+    expect(mocks.listFinancialEntries).toHaveBeenCalledWith("2026-11");
+    expect(result).toMatchObject({
+      month: "2026-11",
+      page: 1,
+      pageSize: 1,
+      totalCount: 1,
+      hasMore: false,
+      entries: [
+        {
+          id: "entry-2",
+          description: "Mercado",
+          category: "Alimentação",
+          expectedAmount: "500.00",
+          actualAmount: null,
+        },
+      ],
+    });
+    expect(JSON.stringify(result)).not.toContain("other-user-must-not-leak");
+    expect(JSON.stringify(result)).not.toContain("accountAlias");
+  });
+
+  it.each([
+    { page: 0, pageSize: 1 },
+    { page: 50_001, pageSize: 1 },
+    { page: 1.5, pageSize: 1 },
+    { page: 1, pageSize: 0 },
+    { page: 1, pageSize: 51 },
+    { page: 1, pageSize: 1.5 },
+  ])("rejects invalid financial pagination: %o", async (pagination) => {
+    await expect(
+      service.listMyFinancialEntries("trusted-owner", {
+        ...pagination,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.listFinancialEntries).not.toHaveBeenCalled();
+  });
+
+  it("reports additional pages when matching entries remain", async () => {
+    mocks.listFinancialEntries.mockResolvedValue({
+      month: "2026-11",
+      entries: [
+        {
+          id: "entry-no-date",
+          description: "Sem data prevista",
+          kind: "EXPENSE",
+          categoryName: "Alimentação",
+          expectedDate: null,
+          actualDate: "2026-11-01",
+        },
+        {
+          id: "entry-b",
+          description: "Mercado B",
+          kind: "EXPENSE",
+          categoryName: "Alimentação",
+          expectedDate: "2026-11-10",
+          actualDate: null,
+        },
+        {
+          id: "entry-a",
+          description: "Mercado A",
+          kind: "EXPENSE",
+          categoryName: "Alimentação",
+          expectedDate: "2026-11-10",
+          actualDate: null,
+        },
+      ],
+    });
+
+    await expect(
+      service.listMyFinancialEntries("trusted-owner", {
+        month: "2026-11",
+        page: 1,
+        pageSize: 1,
+        kind: "EXPENSE",
+        category: "alimentação",
+      }),
+    ).resolves.toMatchObject({
+      totalCount: 3,
+      hasMore: true,
+      entries: [{ id: "entry-a" }],
+    });
+  });
+
+  it("orders dated entries before missing dates and orders different dates chronologically", async () => {
+    mocks.listFinancialEntries.mockResolvedValue({
+      month: "2026-11",
+      entries: [
+        {
+          id: "entry-later",
+          description: "Mais tarde",
+          kind: "EXPENSE",
+          categoryName: "Outras despesas",
+          expectedDate: "2026-11-20",
+          actualDate: null,
+        },
+        {
+          id: "entry-no-date",
+          description: "Sem data",
+          kind: "EXPENSE",
+          categoryName: "Outras despesas",
+          expectedDate: null,
+          actualDate: null,
+        },
+        {
+          id: "entry-earlier",
+          description: "Mais cedo",
+          kind: "EXPENSE",
+          categoryName: "Outras despesas",
+          expectedDate: "2026-11-05",
+          actualDate: null,
+        },
+      ],
+    });
+
+    const result = await service.listMyFinancialEntries("trusted-owner", {
+      month: "2026-11",
+      page: 1,
+      pageSize: 10,
+      kind: "EXPENSE",
+    });
+
+    expect(result.entries.map((entry) => entry.id)).toEqual([
+      "entry-earlier",
+      "entry-later",
+      "entry-no-date",
+    ]);
+  });
+
+  it("returns an empty first page when no financial entries match", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-27T03:00:00.000Z"));
+    mocks.listFinancialEntries.mockResolvedValue({
+      month: "2026-11",
+      entries: [],
+    });
+
+    try {
+      await expect(
+        service.listMyFinancialEntries("trusted-owner", {
+          page: 1,
+          pageSize: 25,
+        }),
+      ).resolves.toMatchObject({
+        month: "2026-11",
+        totalCount: 0,
+        hasMore: false,
+        entries: [],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("updates an objective only inside the trusted token owner's context", async () => {

@@ -20,7 +20,7 @@ describe("MCP documentation catalog", () => {
       "request",
     );
 
-    expect(registeredNames).toHaveLength(22);
+    expect(registeredNames).toHaveLength(24);
     expect(registeredNames.sort()).toEqual([...mcpDocumentedToolNames].sort());
   });
 });
