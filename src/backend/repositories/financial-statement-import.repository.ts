@@ -154,6 +154,10 @@ export class FinancialStatementImportRepository {
       string,
       Array<{ id: string; accountAlias: string }>
     >();
+    const allCandidates = new Map<
+      string,
+      Array<{ id: string; accountAlias: string }>
+    >();
     for (const row of existing) {
       const key = duplicateFingerprint({
         kind: row.kind,
@@ -161,14 +165,14 @@ export class FinancialStatementImportRepository {
         actualDate: row.actualDate!,
         actualAmount: row.actualAmount!,
       });
-      remaining.set(key, [
-        ...(remaining.get(key) ?? []),
-        { id: row.id, accountAlias: row.accountAlias ?? "" },
-      ]);
+      const candidate = { id: row.id, accountAlias: row.accountAlias ?? "" };
+      remaining.set(key, [...(remaining.get(key) ?? []), candidate]);
+      allCandidates.set(key, [...(allCandidates.get(key) ?? []), candidate]);
     }
     const duplicates: Array<{
       sourceRow: number;
       accountAliases: string[];
+      otherPossibleDuplicateAccountAliases: string[];
       accountDuplicateCandidates: Array<{
         entryId: string;
         accountAlias: string;
@@ -178,13 +182,18 @@ export class FinancialStatementImportRepository {
       const key = duplicateFingerprint(row);
       const aliases = remaining.get(key) ?? [];
       if (aliases.length === 0) continue;
+      const selectedCandidate = aliases[0];
       duplicates.push({
         sourceRow: row.sourceRow,
-        accountAliases: [aliases[0].accountAlias],
+        accountAliases: [selectedCandidate.accountAlias],
+        otherPossibleDuplicateAccountAliases: allCandidates
+          .get(key)!
+          .filter((candidate) => candidate.id !== selectedCandidate.id)
+          .map((candidate) => candidate.accountAlias),
         accountDuplicateCandidates: [
           {
-            entryId: aliases[0].id,
-            accountAlias: aliases[0].accountAlias,
+            entryId: selectedCandidate.id,
+            accountAlias: selectedCandidate.accountAlias,
           },
         ],
       });
@@ -404,6 +413,7 @@ export class FinancialStatementImportRepository {
       let importedCount = 0;
       let alreadyImportedCount = 0;
       let duplicateCount = 0;
+      const linkedAccountDuplicateEntryIds = new Set<string>();
       const importedDates: string[] = [];
       const rememberedRows: Array<
         StatementConfirmInput["rows"][number] & { categoryId: string }
@@ -476,16 +486,26 @@ export class FinancialStatementImportRepository {
           const selectedEntry = candidates.find(
             (candidate) => candidate.id === row.accountDuplicateEntryId,
           );
+          const hasConflictingAccountCandidate = candidates.some(
+            (candidate) =>
+              candidate.id !== selectedEntry?.id &&
+              candidate.accountAlias?.trim() &&
+              candidate.accountAlias.trim().toLocaleLowerCase("pt-BR") !==
+                alias,
+          );
           if (
             !selectedEntry ||
             selectedEntry.accountAlias?.trim() ||
-            !input.accountAlias?.trim()
+            !input.accountAlias?.trim() ||
+            hasConflictingAccountCandidate ||
+            linkedAccountDuplicateEntryIds.has(selectedEntry.id)
           ) {
             throw new ApplicationError(
               "A possível duplicidade mudou. Confira a conta e revise o extrato novamente.",
               409,
             );
           }
+          linkedAccountDuplicateEntryIds.add(selectedEntry.id);
           await transaction
             .update(financialEntries)
             .set({ accountAlias: input.accountAlias.trim() })

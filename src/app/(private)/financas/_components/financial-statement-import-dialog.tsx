@@ -44,6 +44,7 @@ type PreviewResponse = {
       categorySource?: "saved" | "suggested" | null;
       possibleDuplicate: boolean;
       possibleDuplicateAccountAliases?: string[];
+      otherPossibleDuplicateAccountAliases?: string[];
       accountDuplicateCandidates?: Array<{
         entryId: string;
         accountAlias: string;
@@ -57,6 +58,7 @@ type ReviewRow = ParsedStatementRow & {
   alreadyImported?: boolean;
   possibleDuplicate: boolean;
   possibleDuplicateAccountAliases: string[];
+  otherPossibleDuplicateAccountAliases: string[];
   accountDuplicateCandidates: Array<{ entryId: string; accountAlias: string }>;
   accountDuplicateEntryId: string;
   manualDuplicateCandidates: Array<{ id: string; description: string }>;
@@ -138,6 +140,7 @@ export function FinancialStatementImportDialog({
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [rememberCategories, setRememberCategories] = useState(true);
   const [accountAlias, setAccountAlias] = useState("");
+  const [linkLegacyDuplicates, setLinkLegacyDuplicates] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const includedRows = useMemo(
@@ -153,9 +156,32 @@ export function FinancialStatementImportDialog({
           accountAlias.trim().toLocaleLowerCase("pt-BR"),
       ),
     );
+  const legacyDuplicateCandidate = (row: ReviewRow) =>
+    row.possibleDuplicate && row.manualDuplicateCandidates.length === 0
+      ? row.accountDuplicateCandidates.find(
+          (candidate) =>
+            !candidate.accountAlias.trim() &&
+            !row.otherPossibleDuplicateAccountAliases.some(
+              (alias) =>
+                alias.trim() &&
+                alias.trim().toLocaleLowerCase("pt-BR") !==
+                  accountAlias.trim().toLocaleLowerCase("pt-BR"),
+            ),
+        )
+      : undefined;
+  const batchDuplicateEntryId = (row: ReviewRow) =>
+    linkLegacyDuplicates ? (legacyDuplicateCandidate(row)?.entryId ?? "") : "";
+  const selectedAccountDuplicateEntryId = (row: ReviewRow) =>
+    row.accountDuplicateEntryId || batchDuplicateEntryId(row);
   const requiresDuplicateReview = (row: ReviewRow) =>
     row.possibleDuplicate &&
-    (!accountAlias.trim() || row.possibleDuplicateAccountAliases.includes(""));
+    !selectedAccountDuplicateEntryId(row) &&
+    (!accountAlias.trim() ||
+      row.possibleDuplicateAccountAliases.some((alias) => !alias.trim()) ||
+      row.otherPossibleDuplicateAccountAliases.some((alias) => !alias.trim()));
+  const legacyDuplicateRows = accountAlias.trim()
+    ? includedRows.filter((row) => legacyDuplicateCandidate(row))
+    : [];
   const invalidIncluded = includedRows.some(
     (row) =>
       row.errors.length ||
@@ -165,12 +191,12 @@ export function FinancialStatementImportDialog({
       (!row.categoryId &&
         !row.alreadyImported &&
         !row.manualDuplicateEntryId &&
-        !row.accountDuplicateEntryId &&
+        !selectedAccountDuplicateEntryId(row) &&
         !matchesSelectedAccount(row)) ||
       (requiresDuplicateReview(row) &&
         !row.confirmedDistinct &&
         !row.accountDuplicateEntryId) ||
-      (Boolean(row.accountDuplicateEntryId) && !accountAlias.trim()) ||
+      (Boolean(selectedAccountDuplicateEntryId(row)) && !accountAlias.trim()) ||
       (row.manualDuplicateCandidates.length > 0 &&
         !row.manualDuplicateEntryId &&
         !row.confirmedDistinct),
@@ -198,6 +224,7 @@ export function FinancialStatementImportDialog({
     setReviewRows([]);
     setRememberCategories(true);
     setAccountAlias("");
+    setLinkLegacyDuplicates(false);
     setLoading(false);
   };
 
@@ -223,6 +250,8 @@ export function FinancialStatementImportDialog({
           categorySource: row.categorySource ?? undefined,
           possibleDuplicateAccountAliases:
             row.possibleDuplicateAccountAliases ?? [],
+          otherPossibleDuplicateAccountAliases:
+            row.otherPossibleDuplicateAccountAliases ?? [],
           accountDuplicateCandidates: row.accountDuplicateCandidates ?? [],
           accountDuplicateEntryId: "",
           manualDuplicateCandidates: row.manualDuplicateCandidates ?? [],
@@ -267,7 +296,8 @@ export function FinancialStatementImportDialog({
               description: row.description.trim(),
               categoryId: row.categoryId || null,
               manualDuplicateEntryId: row.manualDuplicateEntryId || null,
-              accountDuplicateEntryId: row.accountDuplicateEntryId || null,
+              accountDuplicateEntryId:
+                selectedAccountDuplicateEntryId(row) || null,
               confirmedDistinct: row.confirmedDistinct,
               actualDate: toIsoDate(row.actualDate),
               actualAmount: Number(String(row.amount).replace(",", ".")),
@@ -387,7 +417,10 @@ export function FinancialStatementImportDialog({
                 Conta deste extrato
                 <Input
                   value={accountAlias}
-                  onChange={(event) => setAccountAlias(event.target.value)}
+                  onChange={(event) => {
+                    setAccountAlias(event.target.value);
+                    setLinkLegacyDuplicates(false);
+                  }}
                   maxLength={80}
                   list="financial-statement-account-aliases"
                   placeholder="Ex.: Inter principal"
@@ -399,6 +432,24 @@ export function FinancialStatementImportDialog({
                   ))}
                 </datalist>
               </label>
+              {legacyDuplicateRows.length > 0 && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm">
+                  <Checkbox
+                    checked={linkLegacyDuplicates}
+                    onCheckedChange={(checked) =>
+                      setLinkLegacyDuplicates(checked === true)
+                    }
+                    aria-label="Vincular lançamentos antigos a esta conta"
+                  />
+                  <span>
+                    Vincular e ignorar {legacyDuplicateRows.length}{" "}
+                    {legacyDuplicateRows.length === 1
+                      ? "movimentação antiga"
+                      : "movimentações antigas"}{" "}
+                    com os mesmos dados desta conta
+                  </span>
+                </label>
+              )}
               <p className="text-xs text-muted-foreground">
                 Use o extrato para os movimentos desta conta. Registre
                 manualmente apenas dinheiro em espécie ou movimentos que não
@@ -415,6 +466,9 @@ export function FinancialStatementImportDialog({
                   {needsCategoryCount === 1 ? "pendente" : "pendentes"}
                   {duplicateCount > 0 && ` · ${duplicateCount} para revisar`}
                 </p>
+                {linkLegacyDuplicates && legacyDuplicateRows.length > 0 && (
+                  <p>{legacyDuplicateRows.length} repetições serão ignoradas</p>
+                )}
               </div>
               <div className="hidden max-h-[42vh] overflow-y-auto overflow-x-hidden rounded-md border lg:block">
                 <table className="w-full table-fixed text-sm">
@@ -442,7 +496,7 @@ export function FinancialStatementImportDialog({
                         row.included &&
                         !row.categoryId &&
                         !row.manualDuplicateEntryId &&
-                        !row.accountDuplicateEntryId
+                        !selectedAccountDuplicateEntryId(row)
                       )
                         rowErrors.push("Escolha uma categoria.");
                       if (
@@ -456,7 +510,7 @@ export function FinancialStatementImportDialog({
                         );
                       if (
                         row.included &&
-                        row.accountDuplicateEntryId &&
+                        selectedAccountDuplicateEntryId(row) &&
                         !accountAlias.trim()
                       )
                         rowErrors.push(
@@ -590,17 +644,17 @@ export function FinancialStatementImportDialog({
                           </td>
                           <td className="break-words p-2 text-xs">
                             {row.possibleDuplicate &&
-                              matchesSelectedAccount(row) && (
+                              (matchesSelectedAccount(row) ||
+                                batchDuplicateEntryId(row)) && (
                                 <p className="mb-2 font-medium text-muted-foreground">
-                                  Esta linha já existe nesta conta e será
-                                  ignorada.
+                                  Será ignorada como duplicidade.
                                 </p>
                               )}
                             {requiresDuplicateReview(row) && (
                               <div className="mb-2 space-y-1">
                                 <p className="font-medium text-amber-700">
-                                  Há um lançamento igual sem identificação
-                                  segura da conta.
+                                  Há um lançamento igual em outra conta ou sem
+                                  identificação segura.
                                 </p>
                                 {row.manualDuplicateCandidates.length === 0 && (
                                   <Select
@@ -623,8 +677,12 @@ export function FinancialStatementImportDialog({
                                       <SelectValue placeholder="Revise antes de importar" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {row.accountDuplicateCandidates.map(
-                                        (candidate) => (
+                                      {row.accountDuplicateCandidates
+                                        .filter(
+                                          (candidate) =>
+                                            !candidate.accountAlias.trim(),
+                                        )
+                                        .map((candidate) => (
                                           <SelectItem
                                             key={candidate.entryId}
                                             value={candidate.entryId}
@@ -632,8 +690,7 @@ export function FinancialStatementImportDialog({
                                             É a mesma movimentação sem conta
                                             identificada
                                           </SelectItem>
-                                        ),
-                                      )}
+                                        ))}
                                       <SelectItem value="DISTINCT">
                                         É um movimento diferente
                                       </SelectItem>
@@ -709,7 +766,7 @@ export function FinancialStatementImportDialog({
                     row.included &&
                     !row.categoryId &&
                     !row.manualDuplicateEntryId &&
-                    !row.accountDuplicateEntryId
+                    !selectedAccountDuplicateEntryId(row)
                   )
                     rowErrors.push("Escolha uma categoria.");
                   if (
@@ -723,7 +780,7 @@ export function FinancialStatementImportDialog({
                     );
                   if (
                     row.included &&
-                    row.accountDuplicateEntryId &&
+                    selectedAccountDuplicateEntryId(row) &&
                     !accountAlias.trim()
                   )
                     rowErrors.push(
@@ -909,8 +966,8 @@ export function FinancialStatementImportDialog({
                       )}
                       {requiresDuplicateReview(row) && (
                         <label className="block space-y-1 text-xs text-muted-foreground">
-                          Há um lançamento igual sem identificação segura da
-                          conta.
+                          Há um lançamento igual em outra conta ou sem
+                          identificação segura.
                           {row.manualDuplicateCandidates.length === 0 && (
                             <Select
                               value={
@@ -932,8 +989,12 @@ export function FinancialStatementImportDialog({
                                 <SelectValue placeholder="Revise antes de importar" />
                               </SelectTrigger>
                               <SelectContent>
-                                {row.accountDuplicateCandidates.map(
-                                  (candidate) => (
+                                {row.accountDuplicateCandidates
+                                  .filter(
+                                    (candidate) =>
+                                      !candidate.accountAlias.trim(),
+                                  )
+                                  .map((candidate) => (
                                     <SelectItem
                                       key={candidate.entryId}
                                       value={candidate.entryId}
@@ -941,8 +1002,7 @@ export function FinancialStatementImportDialog({
                                       É a mesma movimentação sem conta
                                       identificada
                                     </SelectItem>
-                                  ),
-                                )}
+                                  ))}
                                 <SelectItem value="DISTINCT">
                                   É um movimento diferente
                                 </SelectItem>
@@ -951,11 +1011,13 @@ export function FinancialStatementImportDialog({
                           )}
                         </label>
                       )}
-                      {row.possibleDuplicate && matchesSelectedAccount(row) && (
-                        <p className="mb-2 font-medium text-muted-foreground">
-                          Esta linha já existe nesta conta e será ignorada.
-                        </p>
-                      )}
+                      {row.possibleDuplicate &&
+                        (matchesSelectedAccount(row) ||
+                          batchDuplicateEntryId(row)) && (
+                          <p className="mb-2 font-medium text-muted-foreground">
+                            Será ignorada como duplicidade.
+                          </p>
+                        )}
                       {rowErrors.map((message) => (
                         <p key={message} className="text-xs text-destructive">
                           {message}

@@ -249,6 +249,7 @@ describe("FinancialStatementImportRepository", () => {
       {
         sourceRow: 3,
         accountAliases: ["Inter"],
+        otherPossibleDuplicateAccountAliases: [],
         accountDuplicateCandidates: [
           { entryId: "legacy-account-entry", accountAlias: "Inter" },
         ],
@@ -286,8 +287,54 @@ describe("FinancialStatementImportRepository", () => {
       {
         sourceRow: 2,
         accountAliases: [""],
+        otherPossibleDuplicateAccountAliases: [],
         accountDuplicateCandidates: [
           { entryId: "legacy-row", accountAlias: "" },
+        ],
+      },
+    ]);
+  });
+
+  it("reports other accounts with the same exact signature", async () => {
+    const where = vi.fn().mockResolvedValue([
+      {
+        id: "unassigned-entry",
+        kind: "EXPENSE",
+        description: "Mercado",
+        actualDate: "2026-11-14",
+        actualAmount: "12.50",
+        accountAlias: null,
+      },
+      {
+        id: "pagbank-entry",
+        kind: "EXPENSE",
+        description: "Mercado",
+        actualDate: "2026-11-14",
+        actualAmount: "12.50",
+        accountAlias: "PagBank",
+      },
+    ]);
+    database.select = vi.fn(() => ({ from: () => ({ where }) }));
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.findPossibleDuplicateRows([
+          {
+            sourceRow: 2,
+            kind: "EXPENSE",
+            description: "Mercado",
+            actualDate: "2026-11-14",
+            actualAmount: 12.5,
+          },
+        ]),
+      ),
+    ).resolves.toEqual([
+      {
+        sourceRow: 2,
+        accountAliases: [""],
+        otherPossibleDuplicateAccountAliases: ["PagBank"],
+        accountDuplicateCandidates: [
+          { entryId: "unassigned-entry", accountAlias: "" },
         ],
       },
     ]);
@@ -1554,6 +1601,111 @@ describe("FinancialStatementImportRepository", () => {
 
     expect(updatedRecords).toContainEqual({ accountAlias: "Inter" });
     expect(updatedRecords).toContainEqual({ entryId: "legacy-account-entry" });
+  });
+
+  it("rejects linking the same legacy account row more than once", async () => {
+    const select = createConfirmSelectMock({
+      hasRows: true,
+      signatures: [
+        {
+          id: "legacy-account-entry",
+          kind: "EXPENSE",
+          description: "Mercado",
+          actualDate: "2026-11-14",
+          actualAmount: "12.50",
+          accountAlias: null,
+        },
+      ],
+    });
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({
+          returning: async () => [
+            { id: `reserved-${insert.mock.calls.length}` },
+          ],
+        }),
+      }),
+    }));
+    const update = vi.fn(() => ({
+      set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, update, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "f".repeat(64),
+          accountAlias: "Inter",
+          rememberCategories: false,
+          rows: [2, 3].map((sourceRow) => ({
+            sourceRow,
+            kind: "EXPENSE" as const,
+            description: "Mercado",
+            categoryId: null,
+            accountDuplicateEntryId: "legacy-account-entry",
+            actualDate: "2026-11-14",
+            actualAmount: 12.5,
+          })),
+        }),
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("rejects a legacy duplicate when the same signature exists in another account", async () => {
+    const select = createConfirmSelectMock({
+      hasRows: true,
+      signatures: [
+        {
+          id: "legacy-account-entry",
+          kind: "EXPENSE",
+          description: "Mercado",
+          actualDate: "2026-11-14",
+          actualAmount: "12.50",
+          accountAlias: null,
+        },
+        {
+          id: "pagbank-account-entry",
+          kind: "EXPENSE",
+          description: "Mercado",
+          actualDate: "2026-11-14",
+          actualAmount: "12.50",
+          accountAlias: "PagBank",
+        },
+      ],
+    });
+    const insert = vi.fn(() => ({
+      values: () => ({
+        onConflictDoNothing: () => ({
+          returning: async () => [{ id: "reserved-row" }],
+        }),
+      }),
+    }));
+    database.transaction.mockImplementation(async (callback) =>
+      callback({ select, insert, execute: vi.fn() }),
+    );
+
+    await expect(
+      runWithDataOwner("owner-a", () =>
+        repository.confirm({
+          fileHash: "e".repeat(64),
+          accountAlias: "Inter",
+          rememberCategories: false,
+          rows: [
+            {
+              sourceRow: 2,
+              kind: "EXPENSE",
+              description: "Mercado",
+              categoryId: null,
+              accountDuplicateEntryId: "legacy-account-entry",
+              actualDate: "2026-11-14",
+              actualAmount: 12.5,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("rejects a forged legacy account entry id", async () => {
