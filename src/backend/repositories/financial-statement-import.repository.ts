@@ -413,6 +413,7 @@ export class FinancialStatementImportRepository {
       let importedCount = 0;
       let alreadyImportedCount = 0;
       let duplicateCount = 0;
+      const linkedAccountDuplicateEntryIds = new Set<string>();
       const importedDates: string[] = [];
       const rememberedRows: Array<
         StatementConfirmInput["rows"][number] & { categoryId: string }
@@ -496,13 +497,15 @@ export class FinancialStatementImportRepository {
             !selectedEntry ||
             selectedEntry.accountAlias?.trim() ||
             !input.accountAlias?.trim() ||
-            hasConflictingAccountCandidate
+            hasConflictingAccountCandidate ||
+            linkedAccountDuplicateEntryIds.has(selectedEntry.id)
           ) {
             throw new ApplicationError(
               "A possível duplicidade mudou. Confira a conta e revise o extrato novamente.",
               409,
             );
           }
+          linkedAccountDuplicateEntryIds.add(selectedEntry.id);
           await transaction
             .update(financialEntries)
             .set({ accountAlias: input.accountAlias.trim() })
