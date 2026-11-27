@@ -85,7 +85,9 @@ describe("MCP consent page", () => {
     const text = JSON.stringify(page);
     expect(text).toContain("Aplicativo externo");
     expect(text).toContain("está solicitando acesso");
-    expect(text).toContain("Consultar sua carteira e posições.");
+    expect(text).toContain(
+      "Consultar sua carteira, finanças, operações, planejamento e cotações B3.",
+    );
     expect(text).toContain("disponível somente para ADMIN.");
     expect(text).toContain("Confirmar sua identidade");
     expect(text).toContain("Compartilhar informações básicas");

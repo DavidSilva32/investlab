@@ -37,7 +37,7 @@ describe("McpConnectionValues", () => {
     expect(screen.getByText("Autenticação (Authentication)")).toBeTruthy();
     expect(
       screen.getByText(
-        "Consulta somente leitura de carteira, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
+        "Consulta somente leitura de carteira, finanças, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("https://investlab.example/api/mcp")).toBeTruthy();
