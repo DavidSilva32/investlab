@@ -69,6 +69,8 @@ describe("McpController tool exposure", () => {
     await handle("openid mcp:read");
 
     expect(toolNames).toEqual([
+      "get_my_financial_summary",
+      "list_my_financial_entries",
       "get_my_portfolio",
       "list_my_manual_positions",
       "get_my_emergency_reserve",
@@ -115,6 +117,8 @@ describe("McpController tool exposure", () => {
   it("accepts string-array and scp fallback claims while ignoring invalid scope values", async () => {
     await handle(["mcp:read", 5], "USER");
     expect(toolNames).toEqual([
+      "get_my_financial_summary",
+      "list_my_financial_entries",
       "get_my_portfolio",
       "list_my_manual_positions",
       "get_my_emergency_reserve",

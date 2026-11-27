@@ -28,7 +28,7 @@ export class McpController {
           { name: "InvestLab", version: "1.0.0" },
           {
             instructions:
-              "Use the connected account's domain-specific read tools and combine them when a question spans portfolio, objectives, operations, allocation, strategy, reserve, monthly review, B3 market quotes, or objective simulations. Clearly label simulations as hypothetical, and quotes with their observation timestamp; never describe observed balance changes as investment returns. Administrative tools require explicit admin scope and a specific targetUserId.",
+              "Use the connected account's domain-specific read tools and combine them when a question spans personal finances, portfolio, objectives, operations, allocation, strategy, reserve, monthly review, B3 market quotes, or objective simulations. Clearly distinguish the financial period result from a bank balance. Label simulations as hypothetical, and quotes with their observation timestamp; never describe observed balance changes as investment returns. Administrative tools require explicit admin scope and a specific targetUserId.",
           },
         );
         mcpPortfolioReadToolsController.register(

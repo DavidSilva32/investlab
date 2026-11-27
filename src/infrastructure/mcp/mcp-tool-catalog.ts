@@ -100,6 +100,31 @@ export const mcpToolGroups: McpToolGroupDocumentation[] = [
     ],
   },
   {
+    id: "finance",
+    label: "Finanças",
+    description:
+      "Resumo mensal realizado e lançamentos financeiros da conta conectada.",
+    permission: "mcp:read",
+    tools: [
+      {
+        name: "get_my_financial_summary",
+        description: "Consulta entradas, saídas e resultado realizado do mês.",
+        input: "month opcional, no formato AAAA-MM; por padrão, mês atual.",
+        output:
+          "Totais realizados, resultado do período e distribuição por categoria; não representa saldo bancário.",
+      },
+      {
+        name: "list_my_financial_entries",
+        description:
+          "Lista lançamentos financeiros em páginas de até 50 itens.",
+        input:
+          "month opcional (AAAA-MM), page, pageSize, kind e busca parcial por category.",
+        output:
+          "Lançamentos previstos e realizados do mês em ordem estável por data prevista, data realizada e identificador; sem movimentos de cartão ou dados de outras contas.",
+      },
+    ],
+  },
+  {
     id: "market",
     label: "Simulação e mercado",
     description: "Consulta limitada de cotações B3.",
