@@ -328,9 +328,7 @@ describe("FinancialStatementImportDialog", () => {
       target: { value: "inter" },
     });
     expect(
-      await screen.findAllByText(
-        "Esta linha já existe nesta conta e será ignorada.",
-      ),
+      await screen.findAllByText("Será ignorada como duplicidade."),
     ).toHaveLength(2);
     expect(
       (
@@ -409,9 +407,7 @@ describe("FinancialStatementImportDialog", () => {
     });
 
     expect(
-      await screen.findAllByText(
-        "Esta linha já existe nesta conta e será ignorada.",
-      ),
+      await screen.findAllByText("Será ignorada como duplicidade."),
     ).toHaveLength(4);
   });
 
@@ -1682,5 +1678,245 @@ describe("FinancialStatementImportDialog", () => {
     expect(
       firstMatch(screen.getAllByDisplayValue("Extrato atual")),
     ).toBeTruthy();
+  });
+
+  it("links exact unassigned matches in one batch confirmation", async () => {
+    const firstId = "11111111-1111-4111-8111-111111111111";
+    const secondId = "22222222-2222-4222-8222-222222222222";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            hash: "b".repeat(64),
+            headers: [],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              ...[2, 3].map((sourceRow, index) => ({
+                sourceRow,
+                kind: "EXPENSE",
+                description: "Mercado",
+                actualDate: "2026-11-14",
+                amount: 12.5,
+                errors: [],
+                possibleDuplicate: true,
+                possibleDuplicateAccountAliases: [""],
+                otherPossibleDuplicateAccountAliases: [],
+                accountDuplicateCandidates: [
+                  {
+                    entryId: index === 0 ? firstId : secondId,
+                    accountAlias: "",
+                  },
+                ],
+              })),
+              {
+                sourceRow: 4,
+                kind: "EXPENSE",
+                description: "Padaria",
+                actualDate: "2026-11-15",
+                amount: 8.5,
+                categoryId: categories[0].id,
+                errors: [],
+                possibleDuplicate: false,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    api.request.mockResolvedValueOnce({ importedCount: 0, duplicateCount: 2 });
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findByLabelText("Conta deste extrato");
+    fireEvent.change(screen.getByLabelText("Conta deste extrato"), {
+      target: { value: "Inter" },
+    });
+
+    const batchCheckbox = await screen.findByRole("checkbox", {
+      name: "Vincular lançamentos antigos a esta conta",
+    });
+    fireEvent.click(batchCheckbox);
+    expect(screen.getByText(/2 repetições serão ignoradas/)).toBeTruthy();
+    expect(
+      screen.queryByRole("combobox", {
+        name: "Revisão da duplicidade da linha 2",
+      }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    );
+    await waitFor(() => expect(api.request).toHaveBeenCalledOnce());
+    const confirmation = JSON.parse(api.request.mock.calls[0][1].body) as {
+      rows: Array<{ accountDuplicateEntryId: string | null }>;
+    };
+    expect(confirmation.rows).toMatchObject([
+      { accountDuplicateEntryId: firstId },
+      { accountDuplicateEntryId: secondId },
+      { accountDuplicateEntryId: null },
+    ]);
+  });
+
+  it("keeps batch linking unavailable when a matching record belongs to another account", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            hash: "c".repeat(64),
+            headers: [],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "EXPENSE",
+                description: "Mercado",
+                actualDate: "2026-11-14",
+                amount: 12.5,
+                errors: [],
+                possibleDuplicate: true,
+                possibleDuplicateAccountAliases: [""],
+                otherPossibleDuplicateAccountAliases: ["PagBank"],
+                accountDuplicateCandidates: [
+                  {
+                    entryId: "11111111-1111-4111-8111-111111111111",
+                    accountAlias: "",
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findByLabelText("Conta deste extrato");
+    fireEvent.change(screen.getByLabelText("Conta deste extrato"), {
+      target: { value: "Inter" },
+    });
+
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Vincular lançamentos antigos a esta conta",
+      }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Confirmar importação" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("requires review when an unassigned match is not the first candidate", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            hash: "d".repeat(64),
+            headers: [],
+            mapping: {
+              dateColumn: 0,
+              descriptionColumn: 1,
+              amountColumn: 2,
+              dateFormat: "DMY",
+              decimalSeparator: "COMMA",
+            },
+            rows: [
+              {
+                sourceRow: 2,
+                kind: "EXPENSE",
+                description: "Mercado",
+                actualDate: "2026-11-14",
+                amount: 12.5,
+                errors: [],
+                possibleDuplicate: true,
+                possibleDuplicateAccountAliases: ["PagBank"],
+                otherPossibleDuplicateAccountAliases: [""],
+                accountDuplicateCandidates: [
+                  {
+                    entryId: "11111111-1111-4111-8111-111111111111",
+                    accountAlias: "PagBank",
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    render(
+      <FinancialStatementImportDialog
+        open
+        onOpenChange={() => {}}
+        categories={categories}
+        onImported={() => {}}
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText("Selecionar extrato CSV, XLS ou XLSX"),
+      {
+        target: {
+          files: [new File(["statement"], "extrato.csv", { type: "text/csv" })],
+        },
+      },
+    );
+    await screen.findByLabelText("Conta deste extrato");
+    fireEvent.change(screen.getByLabelText("Conta deste extrato"), {
+      target: { value: "Inter" },
+    });
+
+    expect(
+      screen.queryByRole("checkbox", {
+        name: "Vincular lançamentos antigos a esta conta",
+      }),
+    ).toBeNull();
+    expect(
+      screen.getAllByRole("combobox", {
+        name: "Revisão da duplicidade da linha 2",
+      }),
+    ).toHaveLength(2);
   });
 });

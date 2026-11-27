@@ -604,6 +604,9 @@ export class FinancialStatementImportService {
           possibleDuplicate: duplicatesByRow.has(row.sourceRow),
           possibleDuplicateAccountAliases:
             duplicatesByRow.get(row.sourceRow)?.accountAliases ?? [],
+          otherPossibleDuplicateAccountAliases:
+            duplicatesByRow.get(row.sourceRow)
+              ?.otherPossibleDuplicateAccountAliases ?? [],
           accountDuplicateCandidates:
             duplicatesByRow.get(row.sourceRow)?.accountDuplicateCandidates ??
             [],
