@@ -28,10 +28,14 @@ import { Input } from "@/components/ui/input";
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type LoginFormProps = {
+  mcpCallbackURL?: string;
   supportWhatsAppUrl: string | null;
 };
 
-export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
+export function LoginForm({
+  mcpCallbackURL,
+  supportWhatsAppUrl,
+}: LoginFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
@@ -59,7 +63,11 @@ export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
         toast.error(getApiMessage(body, "Não foi possível concluir o login."));
         return;
       }
-      router.push("/dashboard");
+      if (mcpCallbackURL) {
+        window.location.assign(mcpCallbackURL);
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       toast.error("Não foi possível concluir o login.");
     } finally {
@@ -86,8 +94,16 @@ export function LoginForm({ supportWhatsAppUrl }: LoginFormProps) {
             <LockKeyhole className="size-5" />
           </div>
           <p className="text-sm font-semibold text-primary">InvestLab</p>
-          <CardTitle className="text-2xl">Acesse sua conta</CardTitle>
-          <CardDescription>Entre para acompanhar sua carteira.</CardDescription>
+          <CardTitle className="text-2xl">
+            {mcpCallbackURL
+              ? "Entre para conectar ao MCP do InvestLab"
+              : "Acesse sua conta"}
+          </CardTitle>
+          <CardDescription>
+            {mcpCallbackURL
+              ? "Após entrar, você voltará para revisar e autorizar o acesso."
+              : "Entre para acompanhar sua carteira."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">

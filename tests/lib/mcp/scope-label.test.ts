@@ -3,7 +3,9 @@ import { scopeLabel } from "@/lib/mcp/scope-label";
 
 describe("scopeLabel", () => {
   it("explains known MCP permissions and preserves unknown scopes", () => {
-    expect(scopeLabel("mcp:read")).toBe("Consultar sua carteira e posições.");
+    expect(scopeLabel("mcp:read")).toBe(
+      "Consultar sua carteira, finanças, operações, planejamento e cotações B3.",
+    );
     expect(scopeLabel("mcp:write")).toContain(
       "Posições e saldos de objetivos são acompanhamentos independentes",
     );

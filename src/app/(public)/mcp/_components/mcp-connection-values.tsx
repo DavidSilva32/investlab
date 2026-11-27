@@ -15,7 +15,7 @@ const fields = [
     label: "Descrição (Description)",
     feedbackLabel: "Descrição",
     value:
-      "Consulta somente leitura de carteira, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
+      "Consulta somente leitura de carteira, finanças, operações, objetivos, estratégia, simulações e cotações B3 no InvestLab.",
   },
 ] as const;
 

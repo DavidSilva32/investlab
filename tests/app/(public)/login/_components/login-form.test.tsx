@@ -134,6 +134,44 @@ describe("login form", () => {
     await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/entrar"));
   });
 
+  it("explains the MCP login and returns to its consent callback", async () => {
+    const callbackURL = "/mcp/consent?scope=mcp%3Aread&state=signed";
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    push.mockClear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
+    );
+    render(
+      <LoginForm
+        mcpCallbackURL={callbackURL}
+        supportWhatsAppUrl={supportUrl}
+      />,
+    );
+
+    expect(
+      screen.getByText("Entre para conectar ao MCP do InvestLab"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Após entrar, você voltará para revisar e autorizar o acesso.",
+      ),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("E-mail"), {
+      target: { value: "usuario@exemplo.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Senha"), {
+      target: { value: "senha" },
+    });
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Entrar" }).closest("form")!,
+    );
+
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith(callbackURL));
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("shows a safe error when the login request cannot be completed", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
     render(<LoginForm supportWhatsAppUrl={supportUrl} />);
